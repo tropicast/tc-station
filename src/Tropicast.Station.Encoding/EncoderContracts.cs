@@ -40,4 +40,7 @@ public interface IBroadcastEncoder
     Task<IEncoderSession> StartAsync(BroadcastTarget target, EncoderOptions? options = null, CancellationToken cancellationToken = default);
 }
 
-internal sealed class EncoderException(string message) : IOException(message);
+internal sealed class EncoderException(string message, bool isTransient = false) : IOException(message)
+{
+    internal bool IsTransient { get; } = isTransient;
+}

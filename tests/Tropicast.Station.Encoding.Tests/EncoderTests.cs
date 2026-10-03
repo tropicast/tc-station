@@ -36,7 +36,7 @@ public sealed class EncoderTests
     public void Missing_bundle_is_an_explicit_error_without_PATH_fallback()
     {
         var executable = new FfmpegExecutable(Path.Combine(Path.GetTempPath(), $"missing-{Guid.NewGuid():N}"));
-        var error = Assert.Throws<IOException>(() => executable.Start(new()));
+        var error = Assert.Throws<EncoderException>(() => executable.Start(new()));
         Assert.Contains("Bundled FFmpeg is missing", error.Message, StringComparison.Ordinal);
     }
 
@@ -45,6 +45,7 @@ public sealed class EncoderTests
     [InlineData(409, ConnectionTestStatus.MountInUse)]
     [InlineData(403, ConnectionTestStatus.Rejected)]
     [InlineData(302, ConnectionTestStatus.Rejected)]
+    [InlineData(503, ConnectionTestStatus.Unreachable)]
     public async Task Publishing_rejections_are_classified_without_starting_encoder(int code, ConnectionTestStatus status)
     {
         await using var server = new FakeIcecast(code);
@@ -221,6 +222,7 @@ public sealed class EncoderTests
         var error = await Assert.ThrowsAnyAsync<IOException>(() => session.Completion.WaitAsync(TimeSpan.FromSeconds(10),
             TestContext.Current.CancellationToken));
         Assert.Contains("exited unexpectedly", error.Message, StringComparison.Ordinal);
+        Assert.True(BroadcastController.CanRetry(error));
         await Assert.ThrowsAnyAsync<IOException>(() => session.DisposeAsync().AsTask());
         await server.Done.WaitAsync(TimeSpan.FromSeconds(5), TestContext.Current.CancellationToken);
     }

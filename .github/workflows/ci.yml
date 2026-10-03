@@ -117,6 +117,7 @@ jobs:
             done
             curl -fsS http://127.0.0.1:18000/status-json.xsl > /dev/null || { cat "$RUNNER_TEMP/tc-icecast.log"; exit 1; }
             TC_TEST_OS_SECRETS=1 TC_TEST_PULSE=1 TC_TEST_PULSE_DEFAULTS=1 TC_TEST_ICECAST_PORT=18000 \
+              TC_TEST_ICECAST_EXECUTABLE=/usr/bin/icecast2 \
               dotnet test Tropicast.Station.slnx -c Release --no-build --logger trx --results-directory TestResults
           '
 

@@ -14,7 +14,7 @@ internal sealed class FfmpegExecutable
     {
         if (!File.Exists(Path))
         {
-            throw new IOException("Bundled FFmpeg is missing. Run scripts/build-ffmpeg.sh for this platform, then rebuild the app.");
+            throw new EncoderException("Bundled FFmpeg is missing. Run scripts/build-ffmpeg.sh for this platform, then rebuild the app.");
         }
         var start = new ProcessStartInfo(Path)
         {
@@ -34,7 +34,7 @@ internal sealed class FfmpegExecutable
         catch (System.ComponentModel.Win32Exception)
         {
             process.Dispose();
-            throw new IOException("Bundled FFmpeg could not start. Check the platform/architecture and executable permissions.");
+            throw new EncoderException("Bundled FFmpeg could not start. Check the platform/architecture and executable permissions.");
         }
     }
 

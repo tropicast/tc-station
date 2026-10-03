@@ -31,13 +31,25 @@ public sealed partial class BroadcastViewModel : ViewModelBase, IDisposable
     [ObservableProperty] public partial string Status { get; set; } = "Select a saved profile and audio source, then Go Live.";
     [ObservableProperty] public partial string Elapsed { get; set; } = "00:00:00";
     [ObservableProperty] public partial bool IsActive { get; set; }
+    [ObservableProperty] public partial bool IsReconnecting { get; set; }
+    [ObservableProperty] public partial string ReconnectStatus { get; set; } = "";
+    [ObservableProperty] public partial string Diagnostics { get; set; } = "Reconnects: 0; downtime: 00:00:00";
     public string StateLabel => State.ToString();
     public string ActionLabel => IsActive ? "Stop broadcast" : "Go Live";
-    public string TrayLabel => $"Tropicast Station — {StateLabel} ({Elapsed})";
+    public string TrayLabel => $"Tropicast Station — {StateLabel} ({Elapsed}){(IsReconnecting ? $" — {ReconnectStatus}" : "")}";
     public bool HasActiveBroadcast => _controller.Snapshot.IsActive;
     private bool CanGoLive => !IsActive && !_disposed && !_confirming && !_profiles.IsBusy && !_audio.IsBusy
         && _profiles.SelectedProfile is not null && (_audio.SelectedInput ?? _audio.SelectedOutput) is not null;
     private bool CanStop => IsActive && State != BroadcastState.Stopping && !_confirming && !_disposed;
+    private bool CanRetryNow => !_disposed && !_confirming && _controller.Snapshot.State == BroadcastState.Reconnecting
+        && !_controller.Snapshot.IsRetryConnecting;
+
+    [RelayCommand(CanExecute = nameof(CanRetryNow))]
+    private async Task RetryNowAsync()
+    {
+        await _controller.RetryNowAsync();
+        ApplySnapshot();
+    }
 
     [RelayCommand(CanExecute = nameof(CanGoLive))]
     private async Task GoLiveAsync()
@@ -126,6 +138,10 @@ public sealed partial class BroadcastViewModel : ViewModelBase, IDisposable
         var snapshot = _controller.Snapshot;
         State = snapshot.State;
         IsActive = snapshot.IsActive;
+        IsReconnecting = snapshot.State == BroadcastState.Reconnecting;
+        ReconnectStatus = snapshot.IsRetryConnecting ? $"Attempt {snapshot.RetryAttempt}: connecting / waiting for audio."
+            : $"Attempt {snapshot.RetryAttempt} in {Math.Ceiling(snapshot.RetryIn.TotalSeconds):0} seconds.";
+        Diagnostics = $"Reconnects: {snapshot.ReconnectCount}; downtime: {(int)snapshot.Downtime.TotalHours:00}:{snapshot.Downtime.Minutes:00}:{snapshot.Downtime.Seconds:00}";
         Status = snapshot.Message;
         Elapsed = $"{(int)snapshot.Elapsed.TotalHours:00}:{snapshot.Elapsed.Minutes:00}:{snapshot.Elapsed.Seconds:00}";
         SetLocked(IsActive);
@@ -140,6 +156,7 @@ public sealed partial class BroadcastViewModel : ViewModelBase, IDisposable
     {
         GoLiveCommand.NotifyCanExecuteChanged();
         StopCommand.NotifyCanExecuteChanged();
+        RetryNowCommand.NotifyCanExecuteChanged();
     }
 
     public void Dispose()

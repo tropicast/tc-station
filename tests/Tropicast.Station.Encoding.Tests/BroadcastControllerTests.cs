@@ -1,6 +1,7 @@
 using Microsoft.Extensions.Logging.Abstractions;
 using Tropicast.Station.Audio;
 using Tropicast.Station.Core.Broadcasting;
+using Tropicast.Station.Infrastructure;
 
 namespace Tropicast.Station.Encoding.Tests;
 
@@ -54,7 +55,7 @@ public sealed class BroadcastControllerTests
         }
         else
         {
-            encoder.Session.Fail();
+            encoder.Session.Fail(new EncoderException("Permanent encoder failure: lost the configured encoder."));
         }
         await UntilAsync(() => controller.Snapshot.State == BroadcastState.Error);
         Assert.False(capture.Snapshot.IsCapturing);
@@ -79,7 +80,7 @@ public sealed class BroadcastControllerTests
     }
 
     [Fact]
-    public async Task Failed_capture_start_releases_reserved_encoder_and_error_is_retryable()
+    public async Task Failed_capture_start_does_not_reserve_encoder_and_manual_retry_can_start()
     {
         var tone = new ToneAudioCaptureProvider();
         await using var capture = new AudioCaptureService(tone, NullLogger<AudioCaptureService>.Instance);
@@ -87,7 +88,7 @@ public sealed class BroadcastControllerTests
         using var controller = Create(capture, encoder);
         await controller.StartAsync(Guid.NewGuid(), "missing", cancellationToken: TestContext.Current.CancellationToken);
         Assert.Equal(BroadcastState.Error, controller.Snapshot.State);
-        Assert.Equal(1, encoder.Session.Disposals);
+        Assert.Equal(0, encoder.Session.Disposals);
         await controller.StartAsync(Guid.NewGuid(), (await tone.GetDevicesAsync(TestContext.Current.CancellationToken))[0].Id,
             cancellationToken: TestContext.Current.CancellationToken);
         await UntilAsync(() => controller.Snapshot.State == BroadcastState.Live);
@@ -110,6 +111,146 @@ public sealed class BroadcastControllerTests
         Assert.False(capture.Snapshot.IsCapturing);
     }
 
+    [Fact]
+    public async Task Transient_loss_keeps_capture_and_meters_recovers_and_counts_downtime()
+    {
+        await using var capture = new AudioCaptureService(new ToneAudioCaptureProvider(), NullLogger<AudioCaptureService>.Instance);
+        var encoder = new RetryingEncoder();
+        using var controller = Create(capture, encoder);
+        await controller.StartAsync(Guid.NewGuid(), "demo-input", cancellationToken: TestContext.Current.CancellationToken);
+        await UntilAsync(() => controller.Snapshot.State == BroadcastState.Live);
+        encoder.Session.Fail();
+        await UntilAsync(() => controller.Snapshot.State == BroadcastState.Reconnecting);
+        Assert.True(capture.Snapshot.IsCapturing);
+        Assert.True(capture.Levels.Read().IsActive);
+        Assert.Equal(1, controller.Snapshot.RetryAttempt);
+        Assert.InRange(controller.Snapshot.RetryIn.TotalSeconds, 0.5, 1.2);
+        var elapsed = controller.Snapshot.Elapsed;
+        await UntilAsync(() => controller.Snapshot.State == BroadcastState.Live);
+        Assert.Equal(2, encoder.Starts);
+        Assert.Equal(1, controller.Snapshot.ReconnectCount);
+        Assert.True(controller.Snapshot.Downtime >= TimeSpan.FromMilliseconds(700));
+        Assert.True(controller.Snapshot.Elapsed < elapsed + TimeSpan.FromSeconds(1));
+        Assert.Equal(0, controller.Snapshot.RetryAttempt);
+        Assert.False(controller.Snapshot.IsRetryConnecting);
+        encoder.Session.Fail();
+        await UntilAsync(() => controller.Snapshot.State == BroadcastState.Reconnecting);
+        Assert.Equal(1, controller.Snapshot.RetryAttempt); // Recovery resets consecutive backoff.
+        await controller.RetryNowAsync(TestContext.Current.CancellationToken);
+        await UntilAsync(() => controller.Snapshot.State == BroadcastState.Live);
+        Assert.Equal(2, controller.Snapshot.ReconnectCount);
+        await controller.StopAsync(TestContext.Current.CancellationToken);
+        var downtime = controller.Snapshot.Downtime;
+        await Task.Delay(250, TestContext.Current.CancellationToken);
+        Assert.Equal(downtime, controller.Snapshot.Downtime);
+        await controller.StartAsync(Guid.NewGuid(), "demo-input", cancellationToken: TestContext.Current.CancellationToken);
+        Assert.Equal(0, controller.Snapshot.ReconnectCount);
+        Assert.Equal(TimeSpan.Zero, controller.Snapshot.Downtime);
+    }
+
+    [Fact]
+    public async Task Initial_unreachable_server_retries_with_capture_but_auth_on_retry_is_terminal()
+    {
+        await using var capture = new AudioCaptureService(new ToneAudioCaptureProvider(), NullLogger<AudioCaptureService>.Instance);
+        var encoder = new RetryingEncoder
+        {
+            StartError = attempt => new IcecastSourceException(attempt == 1
+                ? ConnectionTestStatus.Unreachable : ConnectionTestStatus.AuthenticationFailed,
+                attempt == 1 ? "Server unavailable." : "Authentication failed. Check the source password."),
+        };
+        using var controller = Create(capture, encoder);
+        await controller.StartAsync(Guid.NewGuid(), "demo-input", cancellationToken: TestContext.Current.CancellationToken);
+        Assert.Equal(BroadcastState.Reconnecting, controller.Snapshot.State);
+        Assert.True(capture.Snapshot.IsCapturing);
+        await controller.RetryNowAsync(TestContext.Current.CancellationToken);
+        await UntilAsync(() => controller.Snapshot.State == BroadcastState.Error);
+        Assert.Equal(2, encoder.Starts);
+        Assert.Contains("Authentication", controller.Snapshot.Message, StringComparison.Ordinal);
+        Assert.False(capture.Snapshot.IsCapturing);
+        await Task.Delay(1200, TestContext.Current.CancellationToken);
+        Assert.Equal(2, encoder.Starts);
+    }
+
+    [Fact]
+    public async Task Stop_during_backoff_prevents_retry_and_device_loss_is_terminal()
+    {
+        var tone = new ToneAudioCaptureProvider();
+        await using var capture = new AudioCaptureService(tone, NullLogger<AudioCaptureService>.Instance);
+        var encoder = new RetryingEncoder { StartError = _ => new IOException("Network unavailable.") };
+        using var controller = Create(capture, encoder);
+        await controller.StartAsync(Guid.NewGuid(), "demo-input", cancellationToken: TestContext.Current.CancellationToken);
+        Assert.Equal(BroadcastState.Reconnecting, controller.Snapshot.State);
+        await controller.StopAsync(TestContext.Current.CancellationToken);
+        await Task.Delay(1300, TestContext.Current.CancellationToken);
+        Assert.Equal(1, encoder.Starts);
+        Assert.False(capture.Snapshot.IsCapturing);
+        await controller.StartAsync(Guid.NewGuid(), "demo-input", cancellationToken: TestContext.Current.CancellationToken);
+        tone.SetDevices([]);
+        await UntilAsync(() => controller.Snapshot.State == BroadcastState.Error);
+        Assert.Equal(2, encoder.Starts);
+        Assert.Contains("disconnect", controller.Snapshot.Message, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public async Task Stop_cancels_an_inflight_reconnect_handshake_without_deadlock()
+    {
+        await using var capture = new AudioCaptureService(new ToneAudioCaptureProvider(), NullLogger<AudioCaptureService>.Instance);
+        var encoder = new RetryingEncoder { BlockRetry = true };
+        using var controller = Create(capture, encoder);
+        await controller.StartAsync(Guid.NewGuid(), "demo-input", cancellationToken: TestContext.Current.CancellationToken);
+        await UntilAsync(() => controller.Snapshot.State == BroadcastState.Live);
+        encoder.Session.Fail();
+        await UntilAsync(() => controller.Snapshot.State == BroadcastState.Reconnecting);
+        await controller.RetryNowAsync(TestContext.Current.CancellationToken);
+        await UntilAsync(() => controller.Snapshot.IsRetryConnecting);
+        await controller.StopAsync(TestContext.Current.CancellationToken)
+            .WaitAsync(TimeSpan.FromSeconds(2), TestContext.Current.CancellationToken);
+        Assert.Equal(BroadcastState.Idle, controller.Snapshot.State);
+        Assert.False(capture.Snapshot.IsCapturing);
+    }
+
+    [Fact]
+    public async Task Repeated_transient_failures_increase_attempts_and_retry_now_skips_wait()
+    {
+        await using var capture = new AudioCaptureService(new ToneAudioCaptureProvider(), NullLogger<AudioCaptureService>.Instance);
+        var encoder = new RetryingEncoder { StartError = _ => new IOException("Network unavailable.") };
+        using var controller = Create(capture, encoder);
+        await controller.StartAsync(Guid.NewGuid(), "demo-input", cancellationToken: TestContext.Current.CancellationToken);
+        for (var attempt = 1; attempt <= 6; attempt++)
+        {
+            await UntilAsync(() => controller.Snapshot.RetryAttempt == attempt);
+            var nominal = Math.Min(30, Math.Pow(2, attempt - 1));
+            Assert.InRange(controller.Snapshot.RetryIn.TotalSeconds, nominal * 0.8 - 0.3, Math.Min(30, nominal * 1.2));
+            await controller.RetryNowAsync(TestContext.Current.CancellationToken);
+        }
+        await UntilAsync(() => encoder.Starts == 7);
+        Assert.True(capture.Levels.Read().IsActive);
+    }
+
+    [Theory]
+    [InlineData(ConnectionTestStatus.AuthenticationFailed, false)]
+    [InlineData(ConnectionTestStatus.TlsFailed, false)]
+    [InlineData(ConnectionTestStatus.MountInUse, false)]
+    [InlineData(ConnectionTestStatus.Rejected, false)]
+    [InlineData(ConnectionTestStatus.Unreachable, true)]
+    [InlineData(ConnectionTestStatus.TimedOut, true)]
+    public void Typed_source_status_controls_retry_not_message_text(ConnectionTestStatus status, bool retry)
+        => Assert.Equal(retry, BroadcastController.CanRetry(new IcecastSourceException(status, "arbitrary redacted message")));
+
+    [Fact]
+    public void Backoff_doubles_has_jitter_and_caps_at_thirty_seconds()
+    {
+        for (var attempt = 1; attempt <= 10; attempt++)
+        {
+            var nominal = Math.Min(30, Math.Pow(2, attempt - 1));
+            Assert.Equal(nominal * 0.8, BroadcastController.Backoff(attempt, 0).TotalSeconds, precision: 6);
+            Assert.Equal(nominal, BroadcastController.Backoff(attempt, 0.5).TotalSeconds, precision: 6);
+            Assert.Equal(Math.Min(30, nominal * 1.2), BroadcastController.Backoff(attempt, 1).TotalSeconds, precision: 6);
+        }
+        Assert.False(BroadcastController.CanRetry(new EncoderException("Encoder queue overrun.")));
+        Assert.True(BroadcastController.CanRetry(new IOException("Unexpected child exit.")));
+    }
+
     internal static BroadcastController Create(AudioCaptureService capture, IBroadcastEncoder encoder)
         => new(capture, new FixedTargets(), encoder, NullLogger<BroadcastController>.Instance);
 
@@ -120,6 +261,29 @@ public sealed class BroadcastControllerTests
         while (!condition())
         {
             await Task.Delay(20, deadline.Token);
+        }
+    }
+
+    internal sealed class RetryingEncoder : IBroadcastEncoder
+    {
+        internal int Starts { get; private set; }
+        internal MemoryEncoderSession Session { get; private set; } = new();
+        internal Func<int, IOException?>? StartError { get; init; }
+        internal bool BlockRetry { get; init; }
+
+        public async Task<IEncoderSession> StartAsync(BroadcastTarget target, EncoderOptions? options = null, CancellationToken cancellationToken = default)
+        {
+            Starts++;
+            if (BlockRetry && Starts > 1)
+            {
+                await Task.Delay(Timeout.Infinite, cancellationToken);
+            }
+            if (StartError?.Invoke(Starts) is { } error)
+            {
+                throw error;
+            }
+            Session = new();
+            return Session;
         }
     }
 
@@ -169,15 +333,16 @@ internal sealed class MemoryEncoderSession : IEncoderSession
         }
         if (RejectFrames)
         {
-            throw new IOException("Encoder queue overrun.");
+            throw new EncoderException("Encoder queue overrun.");
         }
         Frames++;
         Volatile.Write(ref _snapshot, new(EncoderState.Streaming, "Live", frame.Data.Length));
     }
-    internal void Fail()
+    internal void Fail(IOException? error = null)
     {
-        Volatile.Write(ref _snapshot, new(EncoderState.Failed, "Connection lost.", 0));
-        _completion.TrySetException(new IOException("Connection lost."));
+        error ??= new IOException("Connection lost.");
+        Volatile.Write(ref _snapshot, new(EncoderState.Failed, error.Message, 0));
+        _completion.TrySetException(error);
     }
     public Task StopAsync(CancellationToken cancellationToken = default)
     {

@@ -40,6 +40,13 @@
                       AutomationProperties.HelpText="Stop the active stream after confirmation." />
               <TextBlock x:Name="BroadcastStatus" Text="{Binding Status}" TextWrapping="Wrap"
                          AutomationProperties.Name="{Binding Status}" />
+              <StackPanel Orientation="Horizontal" Spacing="12" IsVisible="{Binding IsReconnecting}">
+                <TextBlock x:Name="ReconnectCountdown" Text="{Binding ReconnectStatus}" VerticalAlignment="Center"
+                           AutomationProperties.Name="{Binding ReconnectStatus}" />
+                <Button x:Name="RetryNowButton" Content="Retry now" Command="{Binding RetryNowCommand}"
+                        AutomationProperties.Name="Retry now" />
+              </StackPanel>
+              <TextBlock Text="{Binding Diagnostics}" AutomationProperties.Name="{Binding Diagnostics}" Opacity="0.7" />
             </StackPanel>
           <Grid ColumnDefinitions="*,280">
             <ScrollViewer>
