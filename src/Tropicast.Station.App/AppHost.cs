@@ -4,6 +4,7 @@ using Tropicast.Station.App.ViewModels;
 using Tropicast.Station.App.Views;
 using Tropicast.Station.Audio;
 using Tropicast.Station.Audio.Linux;
+using Tropicast.Station.Audio.MacOS;
 using Tropicast.Station.Audio.Windows;
 using Tropicast.Station.Core;
 using Tropicast.Station.Encoding;
@@ -25,6 +26,10 @@ internal static class AppHost
         else if (OperatingSystem.IsLinux() && !demoAudio)
         {
             builder.Services.AddLinuxAudioCapture();
+        }
+        else if (OperatingSystem.IsMacOS() && !demoAudio)
+        {
+            builder.Services.AddMacAudioCapture();
         }
 
         builder.Services

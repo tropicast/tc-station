@@ -6,7 +6,8 @@ Cross-platform desktop broadcaster for Tropicast radio stations, built with
 an Icecast mount.
 
 > Status: desktop scaffold, manual connection profiles, and shared audio
-> capture/device-picker pipeline, Windows WASAPI and Linux PulseAudio/PipeWire adapters (issues #2–#6). The macOS adapter (#7),
+> capture/device-picker pipeline, Windows WASAPI, Linux PulseAudio/PipeWire and
+> macOS Core Audio/ScreenCaptureKit adapters (issues #2–#7).
 > encoding, meters and Go Live controls remain in the MVP epic, #1.
 
 ## Prerequisites
@@ -20,6 +21,9 @@ an Icecast mount.
   Debian/Ubuntu, `libpulse` on Arch), plus a running PulseAudio server or
   PipeWire with **`pipewire-pulse`**. Use a recent `pactl` supporting JSON output
   (PulseAudio 15+). No root access is required for capture.
+- Building native macOS capture requires **Xcode Command Line Tools**
+  (`xcode-select --install`). No third-party audio library is required.
+  Run the `.app` bundle described below for privacy permission requests.
 
 ## Build, test and run
 
@@ -41,6 +45,7 @@ Developer Tools (F12).
 | `src/Tropicast.Station.Audio` | Audio capture abstractions and platform adapters |
 | `src/Tropicast.Station.Audio.Windows` | WASAPI shared-mode input and render-endpoint loopback via NAudio |
 | `src/Tropicast.Station.Audio.Linux` | PulseAudio/pipewire-pulse sources and sink monitors via libpulse clients |
+| `src/Tropicast.Station.Audio.MacOS` | Core Audio input and ScreenCaptureKit system audio via a native Apple-framework bridge |
 | `src/Tropicast.Station.Encoding` | Encoder pipeline (bundled FFmpeg supervision) |
 | `src/Tropicast.Station.Infrastructure` | JSON profiles, OS credential stores and Icecast connection testing |
 | `tests/Tropicast.Station.Core.Tests` | Unit tests for the class libraries |
@@ -48,6 +53,7 @@ Developer Tools (F12).
 | `tests/Tropicast.Station.Audio.Tests` | PCM conversion, synthetic capture and hot-plug lifecycle tests |
 | `tests/Tropicast.Station.Audio.Windows.Tests` | Windows adapter queue/lifecycle tests and opt-in hardware qualification |
 | `tests/Tropicast.Station.Audio.Linux.Tests` | Linux parser/session tests and opt-in synthetic native capture integration |
+| `tests/Tropicast.Station.Audio.MacOS.Tests` | macOS adapter lifecycle/permission tests and native enumeration smoke test |
 | `tests/Tropicast.Station.Infrastructure.Tests` | Persistence, source handshake and native credential-store tests |
 
 Dependencies point inward: `App` → `Audio` / `Encoding` / `Infrastructure` → `Core`.
@@ -62,8 +68,8 @@ or publish to Icecast. Levels and broadcasting controls are separate MVP issues.
 
 On Windows, the normal app lists active WASAPI inputs and playback devices
 (loopback sources). On Linux, it lists PulseAudio/PipeWire inputs and sink
-monitor sources. The macOS adapter is not installed yet: the app explicitly
-says so and lists no hardware devices on macOS.
+monitor sources. On macOS, it lists Core Audio inputs (including virtual inputs)
+and a ScreenCaptureKit **System audio** source.
 Run the synthetic adapter on any OS for demos:
 
 ```bash
@@ -90,7 +96,7 @@ capture on removal or native-format changes, and emits a visible error without
 switching to another device. Idle hot-plug/default-device changes refresh the
 picker automatically. The selected device is preserved by ID on renames.
 The Windows WASAPI and Linux PulseAudio adapters are registered before the
-shared audio services; the Core Audio adapter will follow the same pattern.
+shared audio services; the macOS Core Audio adapter follows the same pattern.
 Use `TryAdd` registration so an explicitly registered adapter is not overwritten.
 
 `PcmConverter` produces float32 mono/stereo PCM for the future encoder using
@@ -229,6 +235,73 @@ remain station-side checks; these synthetic tests do not prove those.
 
 This issue delivers PCM preview/capture, not broadcasting; FFmpeg encoding and
 Go Live are subsequent issues (#8–#9).
+
+### macOS Core Audio / system audio capture
+
+Build the app bundle **on a Mac**, then launch it instead of `dotnet run` for
+native capture. Use `osx-arm64` on Apple Silicon or `osx-x64` on Intel:
+
+```bash
+bash scripts/build-macos.sh osx-arm64
+open "artifacts/osx-arm64/Tropicast Station.app"
+```
+
+The script publishes a self-contained .NET app and ad-hoc signs the bundle.
+The native Objective-C bridge is universal (arm64/x86_64); CI compiles it and
+builds both application architectures. The bundle includes microphone and
+screen/system-audio usage descriptions. Unbundled execution refuses permission
+requests with guidance rather than letting macOS terminate a process missing
+its privacy declarations. Ad-hoc builds are for development, not distribution;
+stable developer signing/notarization is part of packaging (#14), and rebuilding
+may require reauthorizing privacy permissions.
+
+Core Audio enumerates live input devices by persistent device UID, native rate
+and input channel count. This includes built-in microphones, USB interfaces and
+virtual inputs. An Audio Queue records interleaved float32 at that rate/channel
+count; Core Audio converts the hardware encoding. Device/default/format changes
+are polled every two seconds. Default changes update labels but never change
+the selected source. Device removal or format changes stop capture with an
+error instead of switching to another mic.
+
+**Start preview** requests microphone access only for input capture. If denied,
+enable **Tropicast Station** under **System Settings → Privacy & Security →
+Microphone**, then restart the app. No audio is recorded during enumeration.
+The OS permission dialog must be answered before a pending start completes.
+
+The **System audio (ScreenCaptureKit)** source captures whole-system playback
+at 48 kHz stereo on macOS 13+, excluding this application's own playback.
+It requires Screen Recording permission on macOS 13; newer macOS versions
+label this **Screen & System Audio Recording**. macOS may prompt for access;
+if capture fails, enable Tropicast Station there and restart. A display must
+be available. No screen output callback is registered, and no screen images
+are retained, displayed, encoded or broadcast. This is whole-system capture,
+not per-application selection or a separate loopback source for each output.
+Idle output may provide no samples.
+
+For headless use, unavailable/denied system capture, or application-only routing,
+use a virtual input such as [BlackHole](https://github.com/ExistentialAudio/BlackHole).
+After installing its driver, route your player's output to BlackHole and select
+the **BlackHole input** in Tropicast. To hear it locally too, create a Multi-Output
+Device in Audio MIDI Setup combining BlackHole and your speakers; match sample
+rates and configure drift correction there. Tropicast does not install drivers,
+alter output routing or mix the microphone with system audio automatically.
+Virtual inputs still require microphone permission.
+
+Native callbacks are copied into owned PCM packets. A bounded queue (256 packets,
+maximum two seconds by byte budget) reports overload instead of dropping samples.
+System audio's planar float buffers are interleaved before entering the shared
+converter. Stop/cancellation closes the reader immediately and releases native
+capture on a worker; disposal drains callbacks before managed delegates are
+released. Failed native start and shutdown errors are surfaced explicitly.
+
+CI exercises managed lifecycle, permission/failure mapping, hot-plug/default
+refresh and native permission-free enumeration; it cannot grant interactive
+privacy permissions or verify physical microphones/interfaces. **Real capture
+and hardware qualification are pending on a Mac.** Check the signed development
+bundle with a built-in mic and an external interface, permission grant/denial,
+system playback, USB unplug/replug, default changes during capture, stop/restart
+and sustained preview on both hardware architectures. PCM preview is not yet
+broadcasting; encoding and Go Live remain #8–#9.
 
 ## Connection profiles
 

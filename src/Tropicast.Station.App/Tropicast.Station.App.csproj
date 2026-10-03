@@ -31,6 +31,7 @@
     <ProjectReference Include="..\Tropicast.Station.Audio\Tropicast.Station.Audio.csproj" />
     <ProjectReference Include="..\Tropicast.Station.Audio.Windows\Tropicast.Station.Audio.Windows.csproj" />
     <ProjectReference Include="..\Tropicast.Station.Audio.Linux\Tropicast.Station.Audio.Linux.csproj" />
+    <ProjectReference Include="..\Tropicast.Station.Audio.MacOS\Tropicast.Station.Audio.MacOS.csproj" />
     <ProjectReference Include="..\Tropicast.Station.Encoding\Tropicast.Station.Encoding.csproj" />
     <ProjectReference Include="..\Tropicast.Station.Infrastructure\Tropicast.Station.Infrastructure.csproj" />
   </ItemGroup>
