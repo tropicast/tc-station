@@ -38,10 +38,35 @@ jobs:
       - name: Build
         run: dotnet build Tropicast.Station.slnx -c Release --no-restore
 
-      - name: Test
+      - name: Test (Windows)
+        if: runner.os == 'Windows'
+        env:
+          TC_TEST_OS_SECRETS: "1"
         run: >
           dotnet test Tropicast.Station.slnx -c Release --no-build
           --logger trx --results-directory TestResults
+
+      - name: Prepare Linux keyring
+        if: runner.os == 'Linux'
+        run: sudo apt-get update -qq && sudo apt-get install -y -qq libsecret-tools gnome-keyring dbus
+
+      - name: Test (Linux with unlocked keyring)
+        if: runner.os == 'Linux'
+        run: |
+          dbus-run-session -- bash -e -c '
+            printf "%s" "tc-ci-test-keyring" | gnome-keyring-daemon --unlock --components=secrets
+            TC_TEST_OS_SECRETS=1 dotnet test Tropicast.Station.slnx -c Release --no-build --logger trx --results-directory TestResults
+          '
+
+      - name: Test (macOS with temporary keychain)
+        if: runner.os == 'macOS'
+        run: |
+          keychain="$RUNNER_TEMP/tc-test.keychain-db"
+          security create-keychain -p tc-ci-test-keyring "$keychain"
+          security default-keychain -s "$keychain"
+          security unlock-keychain -p tc-ci-test-keyring "$keychain"
+          security set-keychain-settings -lut 21600 "$keychain"
+          TC_TEST_OS_SECRETS=1 dotnet test Tropicast.Station.slnx -c Release --no-build --logger trx --results-directory TestResults
 
       - name: Upload test results
         if: always()

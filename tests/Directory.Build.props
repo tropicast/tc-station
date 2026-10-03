@@ -15,5 +15,6 @@
 
   <ItemGroup>
     <Using Include="Xunit" />
+    <Compile Include="$(MSBuildThisFileDirectory)Shared/ProfileFakes.cs" Link="ProfileFakes.cs" />
   </ItemGroup>
 </Project>

@@ -1,6 +1,7 @@
 <Window xmlns="https://github.com/avaloniaui"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         xmlns:vm="using:Tropicast.Station.App.ViewModels"
+        xmlns:profiles="using:Tropicast.Station.Core.Profiles"
         x:Class="Tropicast.Station.App.Views.MainWindow"
         x:DataType="vm:MainViewModel"
         Icon="/Assets/tropicast.ico"
@@ -9,10 +10,56 @@
         MinWidth="640" MinHeight="420"
         WindowStartupLocation="CenterScreen">
 
-  <!-- Placeholder shell; broadcaster controls are added by later MVP issues. -->
-  <StackPanel HorizontalAlignment="Center" VerticalAlignment="Center" Spacing="12">
-    <Image Source="/Assets/tropicast-512.png" Width="128" Height="128" />
-    <TextBlock Text="{Binding Title}" FontSize="24" FontWeight="SemiBold" HorizontalAlignment="Center" />
-    <TextBlock x:Name="VersionText" Text="{Binding Version}" Opacity="0.6" HorizontalAlignment="Center" />
-  </StackPanel>
+  <DockPanel Margin="24">
+    <StackPanel DockPanel.Dock="Top" Orientation="Horizontal" Spacing="12" Margin="0,0,0,20">
+      <Image Source="/Assets/tropicast-512.png" Width="40" Height="40" />
+      <TextBlock Text="{Binding Title}" FontSize="24" VerticalAlignment="Center" />
+      <TextBlock x:Name="VersionText" Text="{Binding Version}" VerticalAlignment="Center" />
+    </StackPanel>
+    <ScrollViewer>
+      <StackPanel DataContext="{Binding Profiles}" x:DataType="vm:ProfileEditorViewModel" Spacing="10">
+        <TextBlock Text="Connection profiles" FontSize="20" />
+        <StackPanel Orientation="Horizontal" Spacing="8">
+          <ComboBox ItemsSource="{Binding Profiles}" SelectedItem="{Binding SelectedProfile}" Width="260" IsEnabled="{Binding CanManage}">
+            <ComboBox.ItemTemplate>
+              <DataTemplate x:DataType="profiles:ConnectionProfile">
+                <TextBlock Text="{Binding Name}" />
+              </DataTemplate>
+            </ComboBox.ItemTemplate>
+          </ComboBox>
+          <Button Content="Edit" Command="{Binding EditCommand}" />
+          <Button Content="New" Command="{Binding NewCommand}" />
+          <Button Content="Delete selected" Command="{Binding DeleteCommand}" />
+        </StackPanel>
+        <StackPanel IsEnabled="{Binding CanManage}" Spacing="8">
+          <TextBlock Text="Profile name" />
+          <TextBox Text="{Binding Name}" PlaceholderText="Profile name" AutomationProperties.Name="Profile name" />
+          <TextBlock Text="Host (hostname or IP only)" />
+          <TextBox Text="{Binding Host}" PlaceholderText="Host (e.g. stream.example.com)" AutomationProperties.Name="Host" />
+          <TextBlock Text="Port" />
+          <TextBox Text="{Binding Port}" PlaceholderText="Port" AutomationProperties.Name="Port" />
+          <TextBlock Text="Mount" />
+          <TextBox Text="{Binding Mount}" PlaceholderText="Mount (e.g. /live.mp3)" AutomationProperties.Name="Mount" />
+          <TextBlock Text="Source username" />
+          <TextBox Text="{Binding Username}" PlaceholderText="Source username" AutomationProperties.Name="Source username" />
+          <TextBlock Text="Source password" />
+          <TextBox x:Name="PasswordInput" Text="{Binding Password}" PasswordChar="●"
+                   PlaceholderText="Source password" AutomationProperties.Name="Source password" />
+          <TextBlock Text="{Binding PasswordHint}" TextWrapping="Wrap" />
+          <CheckBox Content="Use TLS (HTTPS)" IsChecked="{Binding UseTls}" />
+          <TextBlock Text="{Binding TransportWarning}" TextWrapping="Wrap" />
+          <TextBlock Text="Content type" />
+          <ComboBox ItemsSource="{Binding ContentTypes}" SelectedItem="{Binding ContentType}" AutomationProperties.Name="Content type" />
+        </StackPanel>
+        <TextBlock Text="{Binding ValidationMessage}" TextWrapping="Wrap" />
+        <StackPanel Orientation="Horizontal" Spacing="8">
+          <Button Content="Save profile" Command="{Binding SaveCommand}" />
+          <Button Content="Test connection" Command="{Binding TestCommand}" />
+          <Button Content="Cancel test" Command="{Binding TestCancelCommand}" />
+        </StackPanel>
+        <TextBlock Text="{Binding Status}" TextWrapping="Wrap" />
+        <TextBlock Text="Test briefly connects as a source and releases the mount. It does not send audio." TextWrapping="Wrap" Opacity="0.7" />
+      </StackPanel>
+    </ScrollViewer>
+  </DockPanel>
 </Window>

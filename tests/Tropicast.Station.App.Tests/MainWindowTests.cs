@@ -3,6 +3,8 @@ using Avalonia.Headless.XUnit;
 using Microsoft.Extensions.DependencyInjection;
 using Tropicast.Station.App.ViewModels;
 using Tropicast.Station.App.Views;
+using Tropicast.Station.Core.Profiles;
+using Tropicast.Station.Tests;
 
 namespace Tropicast.Station.App.Tests;
 
@@ -11,7 +13,11 @@ public sealed class MainWindowTests
     [AvaloniaFact]
     public void Host_resolves_and_shows_main_window()
     {
-        using var host = AppHost.Create([]);
+        using var host = AppHost.Create([], services =>
+        {
+            services.AddSingleton<IProfileStore, MemoryProfiles>();
+            services.AddSingleton<ISecretStore, MemorySecrets>();
+        });
 
         var window = host.Services.GetRequiredService<MainWindow>();
         window.Show();
