@@ -13,6 +13,40 @@ namespace Tropicast.Station.Infrastructure.Tests;
 public sealed class ConnectionTesterTests
 {
     [Theory]
+    [InlineData("Mountpoint in use", ConnectionTestStatus.MountInUse)]
+    [InlineData("too many sources connected", ConnectionTestStatus.Rejected)]
+    [InlineData("Denied", ConnectionTestStatus.Rejected)]
+    public async Task Legacy_Icecast_403_body_is_classified_without_exposing_server_text(string body, ConnectionTestStatus expected)
+    {
+        using var listener = new TcpListener(IPAddress.Loopback, 0);
+        listener.Start();
+        using var deadline = CancellationTokenSource.CreateLinkedTokenSource(TestContext.Current.CancellationToken);
+        deadline.CancelAfter(TimeSpan.FromSeconds(10));
+        var serve = Task.Run(async () =>
+        {
+            using var client = await listener.AcceptTcpClientAsync(deadline.Token);
+            await using var stream = client.GetStream();
+            var request = new StringBuilder();
+            var bytes = new byte[1];
+            while (!request.ToString().EndsWith("\r\n\r\n", StringComparison.Ordinal))
+            {
+                Assert.NotEqual(0, await stream.ReadAsync(bytes, deadline.Token));
+                request.Append((char)bytes[0]);
+            }
+            await stream.WriteAsync(Encoding.ASCII.GetBytes(
+                $"HTTP/1.0 403 Forbidden\r\nContent-Type: text/plain; charset=utf-8\r\n\r\n{body}"), deadline.Token);
+        }, deadline.Token);
+        var target = new BroadcastTarget(TestProfiles.Valid() with
+        {
+            Host = "127.0.0.1", Port = ((IPEndPoint)listener.LocalEndpoint).Port,
+        }, "test-only");
+        var result = await new IcecastConnectionTester().TestAsync(target, deadline.Token);
+        Assert.Equal(expected, result.Status);
+        Assert.DoesNotContain(body, result.Message, StringComparison.Ordinal);
+        await serve;
+    }
+
+    [Theory]
     [InlineData(100, ConnectionTestStatus.Accepted)]
     [InlineData(401, ConnectionTestStatus.AuthenticationFailed)]
     [InlineData(409, ConnectionTestStatus.MountInUse)]

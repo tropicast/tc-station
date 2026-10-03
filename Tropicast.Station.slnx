@@ -16,6 +16,10 @@
     <Project Path="tests/Tropicast.Station.Audio.Tests/Tropicast.Station.Audio.Tests.csproj" />
     <Project Path="tests/Tropicast.Station.Audio.Windows.Tests/Tropicast.Station.Audio.Windows.Tests.csproj" />
     <Project Path="tests/Tropicast.Station.Core.Tests/Tropicast.Station.Core.Tests.csproj" />
+    <Project Path="tests/Tropicast.Station.Encoding.Tests/Tropicast.Station.Encoding.Tests.csproj" />
     <Project Path="tests/Tropicast.Station.Infrastructure.Tests/Tropicast.Station.Infrastructure.Tests.csproj" />
+  </Folder>
+  <Folder Name="/tools/">
+    <Project Path="tools/EncoderParentProbe/EncoderParentProbe.csproj" />
   </Folder>
 </Solution>

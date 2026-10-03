@@ -1,0 +1,19 @@
+<icecast>
+  <location>Local test</location>
+  <admin>test@localhost</admin>
+  <hostname>localhost</hostname>
+  <limits><clients>10</clients><sources>5</sources><queue-size>524288</queue-size></limits>
+  <authentication>
+    <source-password>tc-test-source</source-password>
+    <relay-password>tc-test-relay</relay-password>
+    <admin-user>admin</admin-user>
+    <admin-password>tc-test-admin</admin-password>
+  </authentication>
+  <listen-socket><port>18000</port><bind-address>127.0.0.1</bind-address></listen-socket>
+  <paths>
+    <logdir>./TestResults</logdir>
+    <webroot>/usr/share/icecast2/web</webroot>
+    <adminroot>/usr/share/icecast2/admin</adminroot>
+  </paths>
+  <logging><accesslog>icecast-access.log</accesslog><errorlog>icecast-error.log</errorlog><loglevel>2</loglevel></logging>
+</icecast>
