@@ -1,0 +1,12 @@
+<Solution>
+  <Folder Name="/src/">
+    <Project Path="src/Tropicast.Station.App/Tropicast.Station.App.csproj" />
+    <Project Path="src/Tropicast.Station.Audio/Tropicast.Station.Audio.csproj" />
+    <Project Path="src/Tropicast.Station.Core/Tropicast.Station.Core.csproj" />
+    <Project Path="src/Tropicast.Station.Encoding/Tropicast.Station.Encoding.csproj" />
+  </Folder>
+  <Folder Name="/tests/">
+    <Project Path="tests/Tropicast.Station.App.Tests/Tropicast.Station.App.Tests.csproj" />
+    <Project Path="tests/Tropicast.Station.Core.Tests/Tropicast.Station.Core.Tests.csproj" />
+  </Folder>
+</Solution>
