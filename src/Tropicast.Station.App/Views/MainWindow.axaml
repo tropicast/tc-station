@@ -1,0 +1,18 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:vm="using:Tropicast.Station.App.ViewModels"
+        x:Class="Tropicast.Station.App.Views.MainWindow"
+        x:DataType="vm:MainViewModel"
+        Icon="/Assets/tropicast.ico"
+        Title="{Binding Title}"
+        Width="900" Height="600"
+        MinWidth="640" MinHeight="420"
+        WindowStartupLocation="CenterScreen">
+
+  <!-- Placeholder shell; broadcaster controls are added by later MVP issues. -->
+  <StackPanel HorizontalAlignment="Center" VerticalAlignment="Center" Spacing="12">
+    <Image Source="/Assets/tropicast-512.png" Width="128" Height="128" />
+    <TextBlock Text="{Binding Title}" FontSize="24" FontWeight="SemiBold" HorizontalAlignment="Center" />
+    <TextBlock x:Name="VersionText" Text="{Binding Version}" Opacity="0.6" HorizontalAlignment="Center" />
+  </StackPanel>
+</Window>
