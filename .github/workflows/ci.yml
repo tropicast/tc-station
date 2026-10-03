@@ -89,3 +89,15 @@ jobs:
           name: test-results-${{ matrix.os }}
           path: TestResults/
           if-no-files-found: ignore
+
+      - name: Build macOS app bundles (Apple Silicon and Intel)
+        if: runner.os == 'macOS'
+        run: |
+          bash scripts/build-macos.sh osx-arm64
+          bash scripts/build-macos.sh osx-x64
+          lipo -verify_arch arm64 x86_64 src/Tropicast.Station.Audio.MacOS/obj/native/libtropicast_audio.dylib
+          for rid in osx-arm64 osx-x64; do
+            bundle="artifacts/$rid/Tropicast Station.app"
+            test -f "$bundle/Contents/MacOS/libtropicast_audio.dylib"
+            test -x "$bundle/Contents/MacOS/Tropicast.Station"
+          done

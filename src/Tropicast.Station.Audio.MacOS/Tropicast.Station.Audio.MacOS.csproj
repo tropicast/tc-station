@@ -1,0 +1,20 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <ItemGroup>
+    <ProjectReference Include="..\Tropicast.Station.Audio\Tropicast.Station.Audio.csproj" />
+    <InternalsVisibleTo Include="Tropicast.Station.Audio.MacOS.Tests" />
+  </ItemGroup>
+  <PropertyGroup>
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+    <NativeLibraryPath>$(MSBuildProjectDirectory)/obj/native/libtropicast_audio.dylib</NativeLibraryPath>
+  </PropertyGroup>
+  <ItemGroup Condition="$([MSBuild]::IsOSPlatform('OSX'))">
+    <None Include="$(NativeLibraryPath)" Link="libtropicast_audio.dylib"
+          CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
+  </ItemGroup>
+  <Target Name="BuildMacAudio" BeforeTargets="BeforeBuild"
+          Condition="$([MSBuild]::IsOSPlatform('OSX'))"
+          Inputs="$(MSBuildProjectDirectory)/Native/AudioBridge.m" Outputs="$(NativeLibraryPath)">
+    <MakeDir Directories="$(MSBuildProjectDirectory)/obj/native" />
+    <Exec Command="xcrun clang -fobjc-arc -fblocks -Wall -Wextra -Werror -Wno-deprecated-declarations -arch arm64 -arch x86_64 -mmacosx-version-min=13.0 -dynamiclib -framework Foundation -framework AVFoundation -framework AudioToolbox -framework CoreAudio -framework ScreenCaptureKit -framework CoreMedia -framework CoreGraphics &quot;$(MSBuildProjectDirectory)/Native/AudioBridge.m&quot; -o &quot;$(NativeLibraryPath)&quot;" />
+  </Target>
+</Project>
