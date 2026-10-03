@@ -42,7 +42,7 @@ internal sealed class FfmpegSession : IEncoderSession
         {
             if (_stopping || _disposed || _failure is not null)
             {
-                throw new IOException(_failure?.Message ?? "The encoder is no longer accepting audio.");
+                throw _failure ?? new IOException("The encoder is no longer accepting audio.");
             }
             if (frame.Format != _options.Format)
             {
@@ -104,7 +104,7 @@ internal sealed class FfmpegSession : IEncoderSession
             }
             catch (OperationCanceledException) when (!_abort.IsCancellationRequested)
             {
-                throw new EncoderException("Icecast stopped accepting audio for 10 seconds. Publishing stopped.");
+                throw new EncoderException("Icecast stopped accepting audio for 10 seconds. Publishing stopped.", isTransient: true);
             }
             var snapshot = Snapshot;
             Volatile.Write(ref _snapshot, new(_stopping ? EncoderState.Stopping : EncoderState.Streaming,
@@ -162,11 +162,11 @@ internal sealed class FfmpegSession : IEncoderSession
                 {
                     if (_process.ExitCode != 0)
                     {
-                        throw new EncoderException("FFmpeg exited unexpectedly. Check the bundled encoder and PCM format.");
+                        throw new EncoderException("FFmpeg exited unexpectedly. The publisher will need a new session.", isTransient: true);
                     }
                     if (!_stopping)
                     {
-                        throw new EncoderException("FFmpeg ended unexpectedly while publishing.");
+                        throw new EncoderException("FFmpeg ended unexpectedly while publishing.", isTransient: true);
                     }
                     await feed.ConfigureAwait(false);
                     await output.ConfigureAwait(false);
@@ -218,7 +218,7 @@ internal sealed class FfmpegSession : IEncoderSession
             }
             catch (System.ComponentModel.Win32Exception)
             {
-                _failure ??= new IOException("FFmpeg could not be terminated. Restart the app before retrying.");
+                _failure = new EncoderException("FFmpeg could not be terminated. Restart the app before retrying.");
             }
             finally
             {
@@ -228,7 +228,7 @@ internal sealed class FfmpegSession : IEncoderSession
                 }
                 catch (IOException)
                 {
-                    _failure ??= new IOException("The Icecast connection could not be released cleanly.");
+                    _failure = new EncoderException("The Icecast connection could not be released cleanly. Restart the app before retrying.");
                 }
                 finally
                 {

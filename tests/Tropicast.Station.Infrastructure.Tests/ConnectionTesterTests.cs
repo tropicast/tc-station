@@ -52,6 +52,7 @@ public sealed class ConnectionTesterTests
     [InlineData(409, ConnectionTestStatus.MountInUse)]
     [InlineData(403, ConnectionTestStatus.Rejected)]
     [InlineData(302, ConnectionTestStatus.Rejected)]
+    [InlineData(503, ConnectionTestStatus.Unreachable)]
     public async Task Status_mapping_and_authenticated_source_handshake(int status, ConnectionTestStatus expected)
     {
         using var listener = new TcpListener(IPAddress.Loopback, 0);

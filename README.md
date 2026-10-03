@@ -8,8 +8,8 @@ an Icecast mount.
 > Status: desktop scaffold, manual connection profiles, and shared audio
 > capture/device-picker pipeline, Windows WASAPI, Linux PulseAudio/PipeWire and
 > macOS Core Audio/ScreenCaptureKit adapters and supervised FFmpeg/Icecast
-> publishing backend, Go Live workflow and audio meters (issues #2–#10).
-> Automatic reconnect and remaining features are tracked in the MVP epic, #1.
+> publishing backend, Go Live workflow, audio meters and automatic reconnect
+> (issues #2–#11). Remaining features are tracked in the MVP epic, #1.
 
 ## Prerequisites
 
@@ -419,24 +419,23 @@ local preview with capture in the selected encoder format.
 The status badge and text expose **Idle → Connecting → Live → Stopping → Idle**,
 plus **Error** on capture/connection/encoder failure. **Live** begins when the
 encoder sends MP3 bytes, not just when authentication succeeds. The elapsed
-counter starts then and retains the last session duration after stopping.
+counter accumulates actual Live time (excluding reconnect downtime) and retains
+the last session duration after stopping.
 An idle system-output endpoint may not emit audio yet and remains Connecting.
-**Reconnecting** is represented in the shared state contract/tray but is not
-entered until the reconnect/backoff policy is implemented in #11. Interrupted
-streams currently stop both capture and encoding and show Error; retry is manual
-with Go Live. There is no silent source/profile fallback.
+Transient publisher failures enter **Reconnecting** automatically. There is no
+silent source/profile fallback.
 
-While Connecting/Live/Stopping, profile editing/testing, source selection,
+While Connecting/Live/Reconnecting/Stopping, profile editing/testing, source selection,
 encoder-format controls and local preview commands are locked. **Stop broadcast**
-asks for confirmation when live; **Keep broadcasting** (or Escape) cancels the
+asks for confirmation when live or reconnecting; **Keep broadcasting** (or Escape) cancels the
 dialog. Stop while Connecting cancels startup without a live-stream warning.
 Closing the window or using tray **Quit** also asks before ending a live stream;
 confirming stops capture and flushes/reaps FFmpeg before closing.
 SIGTERM/OS/process termination still performs host cleanup where possible,
 but cannot always present an interactive confirmation.
 
-The tray/menu-bar uses the Tropicast logo, with a red live dot for Live (and
-future Reconnecting), status/elapsed tooltip and menu, **Show**, **Stop broadcast**
+The tray/menu-bar uses the Tropicast logo, with a red live dot for Live and
+Reconnecting, state/elapsed/countdown tooltip and menu, **Show**, **Stop broadcast**
 and **Quit** actions. Minimize keeps broadcasting; close means quit after
 confirmation, not hide-to-tray. A supported system tray is optional: the same
 controls remain available in the window. Buttons/selectors have screen-reader
@@ -449,6 +448,35 @@ removal and encoder errors. The opt-in Icecast suite additionally runs the
 whole controller with synthetic capture → converter → FFmpeg → real listener
 and verifies decodable MP3 and stop. This is not a physical microphone or
 manual platform accessibility qualification.
+
+### Automatic reconnect
+
+A dropped Icecast connection, network timeout, HTTP 5xx response or unexpected
+publisher process exit triggers a fresh encoder/source session on the **same
+saved target**. Initial unreachable connections also retry. Backoff begins at
+one second and doubles to a 30-second maximum, with ±20% jitter (still capped
+at 30 seconds). A successful return to Live resets the backoff.
+
+Capture and PCM meters continue during reconnect; audio produced while the
+publisher is absent is **not buffered or replayed**. The UI shows the upcoming
+attempt number and countdown, then connecting/waiting-for-audio status.
+**Retry now** skips the wait, without starting a parallel handshake; it is
+disabled while a new publisher is connecting or waiting for its first audio.
+**Stop broadcast** and confirmed Quit cancel both waits and in-flight
+handshakes, stop capture and release the encoder.
+
+Authentication failures, TLS certificate/configuration failures, occupied
+mounts, other HTTP 4xx responses, invalid/missing encoder configuration,
+queue overruns and capture/device failures are **terminal**. They show an
+actionable Error and stop capture, rather than retrying forever. Correct the
+profile/source/bundle and use Go Live again. Error classification uses typed
+source/encoder failures, never arbitrary server message text. Credentials
+stay managed and do not enter native process arguments or diagnostic logs.
+
+The UI and controller snapshot expose the number of **successful reconnects**
+and cumulative **downtime after first Live**, including reconnect handshakes
+and waiting for audio. Counters retain the last session values after Stop and
+reset at the next Go Live. Initial connection waiting is not live downtime.
 
 ## Connection profiles
 
@@ -517,3 +545,24 @@ configured with source username `source` and password `tc-test-source`, then
 set `TC_TEST_ICECAST_PORT` to its port when running `dotnet test`. It uses a
 unique temporary mount and tests accepted credentials, wrong credentials,
 an occupied mount and release after disconnect.
+
+The independent restart test launches its own loopback-only Icecast, stops
+and starts that exact server, verifies automatic recovery with decodable
+listener audio, and checks that wrong credentials are terminal. It does not
+restart the shared `TC_TEST_ICECAST_PORT` instance. Ubuntu CI runs it using
+`TC_TEST_ICECAST_EXECUTABLE=/usr/bin/icecast2`. Locally, opt in with either a
+native executable or an existing Docker image:
+
+```bash
+TC_TEST_ICECAST_DOCKER_IMAGE=tropicast-icecast dotnet test \
+  tests/Tropicast.Station.Encoding.Tests -c Release \
+  --filter FullyQualifiedName~ReconnectIntegrationTests
+# Native Linux alternative:
+TC_TEST_ICECAST_EXECUTABLE=/usr/bin/icecast2 dotnet test \
+  tests/Tropicast.Station.Encoding.Tests -c Release \
+  --filter FullyQualifiedName~ReconnectIntegrationTests
+```
+
+The test uses known test-only passwords, synthetic tones, a unique private
+container/process and an ephemeral host port; it removes its own resources
+afterward and never records microphones or restarts a production server.

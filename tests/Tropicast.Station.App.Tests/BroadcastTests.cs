@@ -12,6 +12,7 @@ using Tropicast.Station.Audio;
 using Tropicast.Station.Core.Broadcasting;
 using Tropicast.Station.Core.Profiles;
 using Tropicast.Station.Encoding;
+using Tropicast.Station.Infrastructure;
 using Tropicast.Station.Tests;
 
 namespace Tropicast.Station.App.Tests;
@@ -150,7 +151,7 @@ public sealed class BroadcastTests
     public async Task Encoder_error_is_visible_and_unlocks_profile_and_audio_selection()
     {
         var profile = TestProfiles.Valid();
-        var encoder = new FakeEncoder { StartError = new IOException("Authentication failed.") };
+        var encoder = new FakeEncoder { StartError = new IcecastSourceException(ConnectionTestStatus.AuthenticationFailed, "Authentication failed.") };
         using var host = CreateHost(profile, encoder, new Confirmation());
         var window = host.Services.GetRequiredService<MainWindow>();
         window.Show();
@@ -167,6 +168,56 @@ public sealed class BroadcastTests
         Assert.True(model.Audio.CanChoose);
         Assert.True(model.Broadcast.GoLiveCommand.CanExecute(null));
         Assert.Equal("Error", window.FindControl<TextBlock>("BroadcastState")!.Text);
+        window.Close();
+    }
+
+    [AvaloniaFact]
+    public async Task Reconnecting_shows_countdown_retry_now_and_retains_meters_and_settings_locks()
+    {
+        var profile = TestProfiles.Valid();
+        var encoder = new FakeEncoder();
+        var confirmation = new Confirmation { Allow = true };
+        using var host = CreateHost(profile, encoder, confirmation);
+        var window = host.Services.GetRequiredService<MainWindow>();
+        window.Width = 640;
+        window.Height = 420;
+        window.Show();
+        var model = host.Services.GetRequiredService<MainViewModel>();
+        using var tray = new BroadcastTray(window, model.Broadcast);
+        await model.Profiles.LoadCommand.ExecuteAsync(null);
+        await model.Audio.RefreshCommand.ExecuteAsync(null);
+        model.Profiles.SelectedProfile = profile;
+        model.Audio.SelectedInput = model.Audio.Inputs[0];
+        await model.Broadcast.GoLiveCommand.ExecuteAsync(null);
+        await UntilAsync(() => model.Broadcast.State == BroadcastState.Live);
+        encoder.StartError = new IOException("Server unavailable.");
+        encoder.Session.Fail();
+        await UntilAsync(() => model.Broadcast.State == BroadcastState.Reconnecting);
+        Assert.True(model.Audio.IsCapturing);
+        Assert.True(model.Audio.Levels.IsActive);
+        Assert.False(model.Audio.CanChoose);
+        Assert.False(model.Profiles.CanManage);
+        Assert.True(window.FindControl<Button>("RetryNowButton")!.IsVisible);
+        Assert.Matches(@"^Attempt [1-9][0-9]* in [0-9]+ seconds\.$", window.FindControl<TextBlock>("ReconnectCountdown")!.Text!);
+        window.UpdateLayout();
+        var stop = window.FindControl<Button>("StopBroadcastButton")!;
+        var bottom = stop.TranslatePoint(new Point(0, stop.Bounds.Height), window);
+        Assert.NotNull(bottom);
+        Assert.InRange(bottom.Value.Y, 0, window.ClientSize.Height);
+        Assert.Contains("Reconnecting", Assert.Single(TrayIcon.GetIcons(Application.Current!)!).ToolTipText!, StringComparison.Ordinal);
+        encoder.StartError = null;
+        await model.Broadcast.RetryNowCommand.ExecuteAsync(null);
+        await UntilAsync(() => model.Broadcast.State == BroadcastState.Live);
+        Assert.Contains("Reconnects: 1", model.Broadcast.Diagnostics, StringComparison.Ordinal);
+        Assert.False(window.FindControl<Button>("RetryNowButton")!.IsEffectivelyVisible);
+        encoder.Session.Fail();
+        await UntilAsync(() => model.Broadcast.State == BroadcastState.Reconnecting);
+        await model.Broadcast.StopCommand.ExecuteAsync(null);
+        Dispatcher.UIThread.RunJobs();
+        Assert.Equal(1, confirmation.Requests);
+        Assert.Equal(BroadcastState.Idle, model.Broadcast.State);
+        Assert.False(model.Audio.IsCapturing);
+        Assert.True(model.Audio.CanChoose);
         window.Close();
     }
 
@@ -211,10 +262,17 @@ public sealed class BroadcastTests
 
     private sealed class FakeEncoder : IBroadcastEncoder
     {
-        internal Session Session { get; } = new();
-        internal IOException? StartError { get; init; }
+        internal Session Session { get; private set; } = new();
+        internal IOException? StartError { get; set; }
         public Task<IEncoderSession> StartAsync(BroadcastTarget target, EncoderOptions? options = null, CancellationToken cancellationToken = default)
-            => StartError is { } error ? Task.FromException<IEncoderSession>(error) : Task.FromResult<IEncoderSession>(Session);
+        {
+            if (StartError is { } error)
+            {
+                return Task.FromException<IEncoderSession>(error);
+            }
+            Session = new();
+            return Task.FromResult<IEncoderSession>(Session);
+        }
     }
 
     private sealed class Session : IEncoderSession
@@ -225,6 +283,11 @@ public sealed class BroadcastTests
         public EncoderSnapshot Snapshot => Volatile.Read(ref _snapshot);
         public Task Completion => _completion.Task;
         public void Submit(PcmFrame frame) => Volatile.Write(ref _snapshot, new(EncoderState.Streaming, "Live", frame.Data.Length));
+        internal void Fail()
+        {
+            Volatile.Write(ref _snapshot, new(EncoderState.Failed, "Connection lost.", 0));
+            _completion.TrySetException(new IOException("Connection lost."));
+        }
         public Task StopAsync(CancellationToken cancellationToken = default)
         {
             _completion.TrySetResult();
@@ -234,6 +297,7 @@ public sealed class BroadcastTests
         {
             Disposals++;
             await StopAsync(TestContext.Current.CancellationToken);
+            await Completion;
         }
     }
 }

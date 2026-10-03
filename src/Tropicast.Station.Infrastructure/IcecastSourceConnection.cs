@@ -123,6 +123,7 @@ public sealed class IcecastSourceConnection : IAsyncDisposable
         { Code: 401 } => new(ConnectionTestStatus.AuthenticationFailed, "Authentication failed. Check the source username and password."),
         { Code: 409 } or { MountInUse: true } => new(ConnectionTestStatus.MountInUse, "The mount is already in use. Stop its current source or choose another mount."),
         { Code: 403 } => new(ConnectionTestStatus.Rejected, "Publishing was denied (mount permissions or source capacity)."),
+        { Code: >= 500 and <= 599 } => new(ConnectionTestStatus.Unreachable, $"The Icecast server is temporarily unavailable (HTTP {response.Code})."),
         _ => new(ConnectionTestStatus.Rejected, $"The server rejected or ended the source stream (HTTP {response.Code})."),
     };
 
