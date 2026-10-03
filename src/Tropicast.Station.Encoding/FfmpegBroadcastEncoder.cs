@@ -45,7 +45,7 @@ public sealed partial class FfmpegBroadcastEncoder : IBroadcastEncoder, IDisposa
             {
                 BitrateKbps = options.BitrateKbps, SampleRate = options.Format.SampleRate, Channels = options.Format.Channels,
             }, target.Password);
-            var connection = await IcecastSourceConnection.ConnectAsync(effectiveTarget, linked.Token).ConfigureAwait(false);
+            var connection = await TropicastSourceConnection.ConnectAsync(effectiveTarget, linked.Token).ConfigureAwait(false);
             try
             {
                 linked.Token.ThrowIfCancellationRequested();

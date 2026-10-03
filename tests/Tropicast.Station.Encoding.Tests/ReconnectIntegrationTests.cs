@@ -15,7 +15,7 @@ public sealed class ReconnectIntegrationTests
 {
     private static readonly string[] MetadataFields = ["server_name", "server_description", "genre", "server_url", "bitrate"];
     [Fact]
-    public async Task Real_Icecast_status_exposes_saved_name_description_genre_url_and_bitrate()
+    public async Task Real_Tropicast_status_exposes_saved_name_description_genre_url_and_bitrate()
     {
         if (Environment.GetEnvironmentVariable("TC_TEST_ICECAST_EXECUTABLE") is null
             && Environment.GetEnvironmentVariable("TC_TEST_ICECAST_DOCKER_IMAGE") is null)
@@ -66,11 +66,11 @@ public sealed class ReconnectIntegrationTests
             }
             await Task.Delay(100, token);
         }
-        throw new IOException("Icecast status did not publish all configured metadata fields within 10 seconds.");
+        throw new IOException("Tropicast status did not publish all configured metadata fields within 10 seconds.");
     }
 
     [Fact]
-    public async Task Real_Icecast_restart_recovers_without_user_action_and_bad_credentials_stop_retrying()
+    public async Task Real_Tropicast_restart_recovers_without_user_action_and_bad_credentials_stop_retrying()
     {
         if (Environment.GetEnvironmentVariable("TC_TEST_ICECAST_EXECUTABLE") is null
             && Environment.GetEnvironmentVariable("TC_TEST_ICECAST_DOCKER_IMAGE") is null)
@@ -226,7 +226,7 @@ public sealed class ReconnectIntegrationTests
             {
                 if (_process?.HasExited == true)
                 {
-                    throw new IOException($"Test Icecast exited: {await _error!}");
+                    throw new IOException($"Test Tropicast exited: {await _error!}");
                 }
                 try
                 {
@@ -242,7 +242,7 @@ public sealed class ReconnectIntegrationTests
                 }
                 await Task.Delay(100, token);
             }
-            throw new IOException("The isolated Icecast test server did not become ready.");
+            throw new IOException("The isolated Tropicast test server did not become ready.");
         }
 
         internal async Task StopAsync(CancellationToken token)

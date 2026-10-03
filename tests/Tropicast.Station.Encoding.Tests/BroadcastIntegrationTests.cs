@@ -8,11 +8,11 @@ namespace Tropicast.Station.Encoding.Tests;
 public sealed class BroadcastIntegrationTests
 {
     [Fact]
-    public async Task Selected_synthetic_capture_goes_live_and_stops_real_Icecast_source()
+    public async Task Selected_synthetic_capture_goes_live_and_stops_real_Tropicast_source()
     {
         if (Environment.GetEnvironmentVariable("TC_TEST_ICECAST_PORT") is not { } port)
         {
-            Assert.Skip("Set TC_TEST_ICECAST_PORT to a local Icecast with source password tc-test-source.");
+            Assert.Skip("Set TC_TEST_ICECAST_PORT to a local Tropicast with source password tc-test-source.");
             return;
         }
         EncoderTests.RequireBundle();

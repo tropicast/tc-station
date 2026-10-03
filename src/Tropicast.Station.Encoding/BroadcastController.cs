@@ -199,7 +199,7 @@ public sealed partial class BroadcastController(
                                 _retryAttempt = 0;
                                 _retryWait.Reset();
                             }
-                            Publish(BroadcastState.Live, "Live — publishing audio to Icecast.");
+                            Publish(BroadcastState.Live, "Live — publishing audio to Tropicast.");
                         }
                     }
                     else if (Snapshot.State == BroadcastState.Reconnecting)
@@ -245,7 +245,7 @@ public sealed partial class BroadcastController(
 
     internal static bool CanRetry(IOException error) => error switch
     {
-        IcecastSourceException source => source.Status is ConnectionTestStatus.Unreachable or ConnectionTestStatus.TimedOut,
+        TropicastSourceException source => source.Status is ConnectionTestStatus.Unreachable or ConnectionTestStatus.TimedOut,
         EncoderException encoderError => encoderError.IsTransient,
         _ => true,
     };
@@ -381,6 +381,12 @@ public sealed partial class BroadcastController(
         var snapshot = new BroadcastSnapshot(state, message, _liveTime.Elapsed, _retryAttempt,
             retryIn > TimeSpan.Zero ? retryIn : TimeSpan.Zero, _retryConnecting, _reconnectCount, _downtime.Elapsed);
         Volatile.Write(ref _snapshot, snapshot);
+        if (snapshot.State != _lastLoggedState)
+        {
+            LogState(logger, (int)snapshot.State, snapshot.ReconnectCount, snapshot.RetryAttempt,
+                snapshot.Downtime.TotalSeconds, snapshot.Elapsed.TotalSeconds);
+            _lastLoggedState = snapshot.State;
+        }
         Changed?.Invoke(this, new(snapshot));
     }
 
@@ -397,4 +403,10 @@ public sealed partial class BroadcastController(
 
     [LoggerMessage(Level = LogLevel.Warning, Message = "Broadcast failed ({ErrorType}); sensitive diagnostics omitted")]
     private static partial void LogFailure(ILogger logger, string errorType);
+
+    private BroadcastState _lastLoggedState = BroadcastState.Idle;
+
+    [LoggerMessage(EventId = 1302, Level = LogLevel.Information,
+        Message = "Broadcast state {State}; reconnects {ReconnectCount}; attempt {RetryAttempt}; downtime {DowntimeSeconds}; live {ElapsedSeconds}")]
+    private static partial void LogState(ILogger logger, int state, int reconnectCount, int retryAttempt, double downtimeSeconds, double elapsedSeconds);
 }

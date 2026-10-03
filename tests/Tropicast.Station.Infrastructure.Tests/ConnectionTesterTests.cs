@@ -16,7 +16,7 @@ public sealed class ConnectionTesterTests
     [InlineData("Mountpoint in use", ConnectionTestStatus.MountInUse)]
     [InlineData("too many sources connected", ConnectionTestStatus.Rejected)]
     [InlineData("Denied", ConnectionTestStatus.Rejected)]
-    public async Task Legacy_Icecast_403_body_is_classified_without_exposing_server_text(string body, ConnectionTestStatus expected)
+    public async Task Legacy_Tropicast_403_body_is_classified_without_exposing_server_text(string body, ConnectionTestStatus expected)
     {
         using var listener = new TcpListener(IPAddress.Loopback, 0);
         listener.Start();
@@ -40,7 +40,7 @@ public sealed class ConnectionTesterTests
         {
             Host = "127.0.0.1", Port = ((IPEndPoint)listener.LocalEndpoint).Port,
         }, "test-only");
-        var result = await new IcecastConnectionTester().TestAsync(target, deadline.Token);
+        var result = await new TropicastConnectionTester().TestAsync(target, deadline.Token);
         Assert.Equal(expected, result.Status);
         Assert.DoesNotContain(body, result.Message, StringComparison.Ordinal);
         await serve;
@@ -89,7 +89,7 @@ public sealed class ConnectionTesterTests
             StreamName = "Station", StreamDescription = "Local programming", StreamGenre = "Talk",
             StreamUrl = "https://example.com/radio",
         };
-        var result = await new IcecastConnectionTester().TestAsync(new(profile, "secret"), deadline.Token);
+        var result = await new TropicastConnectionTester().TestAsync(new(profile, "secret"), deadline.Token);
         Assert.Equal(expected, result.Status);
         Assert.DoesNotContain("secret", result.Message);
         var header = await serve;
@@ -112,10 +112,10 @@ public sealed class ConnectionTesterTests
         var port = ((IPEndPoint)listener.LocalEndpoint).Port;
         listener.Stop();
         var target = new BroadcastTarget(TestProfiles.Valid() with { Port = port, Host = "127.0.0.1" }, "secret");
-        Assert.Equal(ConnectionTestStatus.Unreachable, (await new IcecastConnectionTester().TestAsync(target, TestContext.Current.CancellationToken)).Status);
+        Assert.Equal(ConnectionTestStatus.Unreachable, (await new TropicastConnectionTester().TestAsync(target, TestContext.Current.CancellationToken)).Status);
         using var cancelled = new CancellationTokenSource();
         cancelled.Cancel();
-        await Assert.ThrowsAnyAsync<OperationCanceledException>(() => new IcecastConnectionTester().TestAsync(target, cancelled.Token));
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(() => new TropicastConnectionTester().TestAsync(target, cancelled.Token));
     }
 
     [Fact]
@@ -145,16 +145,16 @@ public sealed class ConnectionTesterTests
             }
         }, deadline.Token);
         var profile = TestProfiles.Valid() with { Port = ((IPEndPoint)listener.LocalEndpoint).Port, UseTls = true };
-        Assert.Equal(ConnectionTestStatus.TlsFailed, (await new IcecastConnectionTester().TestAsync(new(profile, "secret"), deadline.Token)).Status);
+        Assert.Equal(ConnectionTestStatus.TlsFailed, (await new TropicastConnectionTester().TestAsync(new(profile, "secret"), deadline.Token)).Status);
         await serve;
     }
 
     [Fact]
-    public async Task Real_icecast_authentication_busy_mount_and_release()
+    public async Task Real_tropicast_authentication_busy_mount_and_release()
     {
         if (Environment.GetEnvironmentVariable("TC_TEST_ICECAST_PORT") is not { } portText)
         {
-            Assert.Skip("Set TC_TEST_ICECAST_PORT for a local Icecast configured with source password tc-test-source.");
+            Assert.Skip("Set TC_TEST_ICECAST_PORT for a local Tropicast configured with source password tc-test-source.");
             return;
         }
 
@@ -163,7 +163,7 @@ public sealed class ConnectionTesterTests
             Host = "127.0.0.1", Port = int.Parse(portText, System.Globalization.CultureInfo.InvariantCulture),
             Mount = $"/test-{Guid.NewGuid():N}.mp3",
         };
-        var tester = new IcecastConnectionTester();
+        var tester = new TropicastConnectionTester();
         Assert.Equal(ConnectionTestStatus.AuthenticationFailed, (await tester.TestAsync(new(profile, "wrong-password"), TestContext.Current.CancellationToken)).Status);
         Assert.Equal(ConnectionTestStatus.Accepted, (await tester.TestAsync(new(profile, "tc-test-source"), TestContext.Current.CancellationToken)).Status);
         await Task.Delay(300, TestContext.Current.CancellationToken);

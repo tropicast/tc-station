@@ -102,8 +102,8 @@ jobs:
             pulse_pid=$!
             mkdir -p TestResults
             icecast2 -c tests/Tropicast.Station.Encoding.Tests/icecast.xml > "$RUNNER_TEMP/tc-icecast.log" 2>&1 &
-            icecast_pid=$!
-            trap "kill $pulse_pid $icecast_pid; wait $pulse_pid $icecast_pid || true" EXIT
+            tropicast_pid=$!
+            trap "kill $pulse_pid $tropicast_pid; wait $pulse_pid $tropicast_pid || true" EXIT
             for attempt in {1..50}; do
               if pactl info > /dev/null 2>&1; then break; fi
               sleep 0.1

@@ -8,19 +8,19 @@ using Tropicast.Station.Core.Profiles;
 
 namespace Tropicast.Station.Infrastructure;
 
-public sealed class IcecastSourceException(ConnectionTestStatus status, string message) : IOException(message)
+public sealed class TropicastSourceException(ConnectionTestStatus status, string message) : IOException(message)
 {
     public ConnectionTestStatus Status { get; } = status;
 }
 
 /// <summary>Credential-safe PUT source stream; no redirects or certificate bypasses.</summary>
-public sealed class IcecastSourceConnection : IAsyncDisposable
+public sealed class TropicastSourceConnection : IAsyncDisposable
 {
     private readonly TcpClient _client;
     private readonly Stream _stream;
     private readonly bool _expectFinalResponse;
 
-    private IcecastSourceConnection(TcpClient client, Stream stream, bool expectFinalResponse)
+    private TropicastSourceConnection(TcpClient client, Stream stream, bool expectFinalResponse)
     {
         _client = client;
         _stream = stream;
@@ -29,7 +29,7 @@ public sealed class IcecastSourceConnection : IAsyncDisposable
 
     public Stream AudioStream => _stream;
 
-    public static async Task<IcecastSourceConnection> ConnectAsync(BroadcastTarget target, CancellationToken cancellationToken = default)
+    public static async Task<TropicastSourceConnection> ConnectAsync(BroadcastTarget target, CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(target);
         if (ProfileValidator.Validate(target.Profile).Count > 0 || !ProfileValidator.IsValidPassword(target.Password))
@@ -72,19 +72,19 @@ public sealed class IcecastSourceConnection : IAsyncDisposable
         }
         catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested)
         {
-            throw new IcecastSourceException(ConnectionTestStatus.TimedOut, "Connection timed out after 10 seconds.");
+            throw new TropicastSourceException(ConnectionTestStatus.TimedOut, "Connection timed out after 10 seconds.");
         }
         catch (AuthenticationException)
         {
-            throw new IcecastSourceException(ConnectionTestStatus.TlsFailed, "TLS failed. Check the server certificate and TLS port.");
+            throw new TropicastSourceException(ConnectionTestStatus.TlsFailed, "TLS failed. Check the server certificate and TLS port.");
         }
         catch (SocketException)
         {
-            throw new IcecastSourceException(ConnectionTestStatus.Unreachable, "Cannot reach the server. Check the host, port, network and firewall.");
+            throw new TropicastSourceException(ConnectionTestStatus.Unreachable, "Cannot reach the server. Check the host, port, network and firewall.");
         }
-        catch (IOException ex) when (ex is not IcecastSourceException)
+        catch (IOException ex) when (ex is not TropicastSourceException)
         {
-            throw new IcecastSourceException(negotiatingTls ? ConnectionTestStatus.TlsFailed : ConnectionTestStatus.Unreachable,
+            throw new TropicastSourceException(negotiatingTls ? ConnectionTestStatus.TlsFailed : ConnectionTestStatus.Unreachable,
                 negotiatingTls ? "TLS negotiation failed. Check the certificate, TLS port and server configuration."
                     : "The server closed the connection before completing the source handshake.");
         }
@@ -139,17 +139,17 @@ public sealed class IcecastSourceConnection : IAsyncDisposable
         }
         var byteBuffer = new byte[1];
         await _stream.ReadAsync(byteBuffer, cancellationToken).ConfigureAwait(false);
-        throw new IOException("Icecast closed the source connection.");
+        throw new IOException("Tropicast closed the source connection.");
     }
 
     private sealed record SourceResponse(int Code, bool MountInUse = false);
 
-    private static IcecastSourceException Rejected(SourceResponse response) => response switch
+    private static TropicastSourceException Rejected(SourceResponse response) => response switch
     {
         { Code: 401 } => new(ConnectionTestStatus.AuthenticationFailed, "Authentication failed. Check the source username and password."),
         { Code: 409 } or { MountInUse: true } => new(ConnectionTestStatus.MountInUse, "The mount is already in use. Stop its current source or choose another mount."),
         { Code: 403 } => new(ConnectionTestStatus.Rejected, "Publishing was denied (mount permissions or source capacity)."),
-        { Code: >= 500 and <= 599 } => new(ConnectionTestStatus.Unreachable, $"The Icecast server is temporarily unavailable (HTTP {response.Code})."),
+        { Code: >= 500 and <= 599 } => new(ConnectionTestStatus.Unreachable, $"The Tropicast server is temporarily unavailable (HTTP {response.Code})."),
         _ => new(ConnectionTestStatus.Rejected, $"The server rejected or ended the source stream (HTTP {response.Code})."),
     };
 
@@ -161,7 +161,7 @@ public sealed class IcecastSourceConnection : IAsyncDisposable
         {
             if (await stream.ReadAsync(bytes, cancellationToken).ConfigureAwait(false) == 0)
             {
-                throw new IOException("Icecast closed the source connection.");
+                throw new IOException("Tropicast closed the source connection.");
             }
             header.Append((char)bytes[0]);
             if (header.Length >= 4 && header[^4] == '\r' && header[^3] == '\n'
@@ -191,7 +191,7 @@ public sealed class IcecastSourceConnection : IAsyncDisposable
                 break;
             }
         }
-        throw new IcecastSourceException(ConnectionTestStatus.Rejected, "The server did not return a valid Icecast HTTP response.");
+        throw new TropicastSourceException(ConnectionTestStatus.Rejected, "The server did not return a valid Tropicast HTTP response.");
     }
 
     public async ValueTask DisposeAsync()

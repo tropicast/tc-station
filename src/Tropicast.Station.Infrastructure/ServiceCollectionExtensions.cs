@@ -12,7 +12,7 @@ public static class ServiceCollectionExtensions
         services.AddSingleton<IProfileStore>(_ => new JsonProfileStore(Path.Combine(
             Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "Tropicast", "Station")));
         services.AddSingleton<ISecretStore, OsSecretStore>();
-        services.AddSingleton<IConnectionTester, IcecastConnectionTester>();
+        services.AddSingleton<IConnectionTester, TropicastConnectionTester>();
         return services;
     }
 }

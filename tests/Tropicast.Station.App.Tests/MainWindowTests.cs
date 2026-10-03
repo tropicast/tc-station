@@ -32,9 +32,10 @@ public sealed class MainWindowTests
         window.Close();
     }
 
-    [Fact]
+    [AvaloniaFact]
     public void Host_container_is_valid()
     {
+        Assert.True(Avalonia.Threading.Dispatcher.UIThread.CheckAccess());
         using var host = AppHost.Create([]);
 
         Assert.Same(

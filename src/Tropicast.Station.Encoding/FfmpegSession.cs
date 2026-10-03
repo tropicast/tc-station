@@ -9,7 +9,7 @@ namespace Tropicast.Station.Encoding;
 internal sealed class FfmpegSession : IEncoderSession
 {
     private readonly Process _process;
-    private readonly IcecastSourceConnection _connection;
+    private readonly TropicastSourceConnection _connection;
     private readonly EncoderOptions _options;
     private readonly CancellationTokenSource _abort = new();
     private readonly Channel<PcmFrame> _input = Channel.CreateBounded<PcmFrame>(new BoundedChannelOptions(256)
@@ -24,7 +24,7 @@ internal sealed class FfmpegSession : IEncoderSession
     private bool _disposed;
     private bool _tokensDisposed;
 
-    internal FfmpegSession(Process process, IcecastSourceConnection connection, EncoderOptions options)
+    internal FfmpegSession(Process process, TropicastSourceConnection connection, EncoderOptions options)
     {
         _process = process;
         _connection = connection;
@@ -104,11 +104,11 @@ internal sealed class FfmpegSession : IEncoderSession
             }
             catch (OperationCanceledException) when (!_abort.IsCancellationRequested)
             {
-                throw new EncoderException("Icecast stopped accepting audio for 10 seconds. Publishing stopped.", isTransient: true);
+                throw new EncoderException("Tropicast stopped accepting audio for 10 seconds. Publishing stopped.", isTransient: true);
             }
             var snapshot = Snapshot;
             Volatile.Write(ref _snapshot, new(_stopping ? EncoderState.Stopping : EncoderState.Streaming,
-                _stopping ? "Finishing the MP3 stream." : "Publishing MP3 audio to Icecast.", snapshot.EncodedBytes + count));
+                _stopping ? "Finishing the MP3 stream." : "Publishing MP3 audio to Tropicast.", snapshot.EncodedBytes + count));
         }
     }
 
@@ -181,8 +181,8 @@ internal sealed class FfmpegSession : IEncoderSession
             {
                 if (ex is not OperationCanceledException || !_stopping)
                 {
-                    _failure ??= ex is IcecastSourceException or EncoderException
-                        ? (IOException)ex : new IOException("Encoding or Icecast connection failed. Publishing stopped.");
+                    _failure ??= ex is TropicastSourceException or EncoderException
+                        ? (IOException)ex : new IOException("Encoding or Tropicast connection failed. Publishing stopped.");
                 }
             }
         }
@@ -228,7 +228,7 @@ internal sealed class FfmpegSession : IEncoderSession
                 }
                 catch (IOException)
                 {
-                    _failure = new EncoderException("The Icecast connection could not be released cleanly. Restart the app before retrying.");
+                    _failure = new EncoderException("The Tropicast connection could not be released cleanly. Restart the app before retrying.");
                 }
                 finally
                 {

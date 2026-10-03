@@ -2,5 +2,6 @@
   <ItemGroup>
     <ProjectReference Include="..\Tropicast.Station.Core\Tropicast.Station.Core.csproj" />
     <PackageReference Include="Microsoft.Extensions.DependencyInjection.Abstractions" />
+    <PackageReference Include="Microsoft.Extensions.Logging.Abstractions" />
   </ItemGroup>
 </Project>
