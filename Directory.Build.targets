@@ -1,0 +1,11 @@
+<Project>
+  <PropertyGroup>
+    <FfmpegBundleRid Condition="'$(RuntimeIdentifier)' != ''">$(RuntimeIdentifier)</FfmpegBundleRid>
+    <FfmpegBundleRid Condition="'$(FfmpegBundleRid)' == ''">$(NETCoreSdkPortableRuntimeIdentifier)</FfmpegBundleRid>
+    <FfmpegBundleDirectory>$(MSBuildThisFileDirectory)artifacts/ffmpeg/$(FfmpegBundleRid)</FfmpegBundleDirectory>
+  </PropertyGroup>
+  <ItemGroup Condition="'$(OutputType)' == 'WinExe' Or '$(MSBuildProjectName)' == 'Tropicast.Station.Encoding.Tests'">
+    <Content Include="$(FfmpegBundleDirectory)/**/*" Link="ffmpeg/%(RecursiveDir)%(Filename)%(Extension)"
+             CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
+  </ItemGroup>
+</Project>

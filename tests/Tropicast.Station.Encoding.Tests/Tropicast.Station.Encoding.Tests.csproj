@@ -1,0 +1,12 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <ItemGroup>
+    <ProjectReference Include="..\..\src\Tropicast.Station.Encoding\Tropicast.Station.Encoding.csproj" />
+    <ProjectReference Include="..\..\tools\EncoderParentProbe\EncoderParentProbe.csproj" ReferenceOutputAssembly="false" />
+  </ItemGroup>
+  <Target Name="CopyParentProbe" AfterTargets="Build">
+    <ItemGroup>
+      <ProbeFiles Include="$(MSBuildProjectDirectory)/../../tools/EncoderParentProbe/bin/$(Configuration)/net10.0/EncoderParentProbe.*" />
+    </ItemGroup>
+    <Copy SourceFiles="@(ProbeFiles)" DestinationFolder="$(OutDir)probe" />
+  </Target>
+</Project>

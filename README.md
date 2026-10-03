@@ -7,8 +7,9 @@ an Icecast mount.
 
 > Status: desktop scaffold, manual connection profiles, and shared audio
 > capture/device-picker pipeline, Windows WASAPI, Linux PulseAudio/PipeWire and
-> macOS Core Audio/ScreenCaptureKit adapters (issues #2–#7).
-> encoding, meters and Go Live controls remain in the MVP epic, #1.
+> macOS Core Audio/ScreenCaptureKit adapters and supervised FFmpeg/Icecast
+> publishing backend (issues #2–#8). Go Live UI, meters and reconnect remain
+> in the MVP epic, #1.
 
 ## Prerequisites
 
@@ -36,6 +37,22 @@ dotnet run --project src/Tropicast.Station.App
 For an optimized build, use `-c Release`. Debug builds enable Avalonia
 Developer Tools (F12).
 
+For encoding, build the pinned native bundle first (C compiler, make, Perl,
+pkg-config, curl, tar and an xz-capable tar are required):
+
+```bash
+bash scripts/build-ffmpeg.sh linux-x64  # or linux-arm64, osx-arm64, osx-x64
+dotnet build -c Release
+```
+
+On Windows, run `bash scripts/build-ffmpeg.sh win-x64` from an MSYS2 **MINGW64**
+shell with MinGW GCC/pkgconf, make, Perl, curl and tar installed. The script
+builds only FFmpeg/LAME and Linux OpenSSL, not the .NET app. Native Linux builds
+use the build host's libc baseline; build release bundles on the oldest
+supported distribution. Linux arm64 is a native build, not an x64 cross-build.
+macOS builds can target either CPU architecture and require Xcode tools.
+Sources are checksum-pinned; intermediate outputs stay under ignored `artifacts/`.
+
 ## Solution layout
 
 | Project | Responsibility |
@@ -46,7 +63,7 @@ Developer Tools (F12).
 | `src/Tropicast.Station.Audio.Windows` | WASAPI shared-mode input and render-endpoint loopback via NAudio |
 | `src/Tropicast.Station.Audio.Linux` | PulseAudio/pipewire-pulse sources and sink monitors via libpulse clients |
 | `src/Tropicast.Station.Audio.MacOS` | Core Audio input and ScreenCaptureKit system audio via a native Apple-framework bridge |
-| `src/Tropicast.Station.Encoding` | Encoder pipeline (bundled FFmpeg supervision) |
+| `src/Tropicast.Station.Encoding` | Bounded float32→MP3 FFmpeg child and credential-safe Icecast publisher |
 | `src/Tropicast.Station.Infrastructure` | JSON profiles, OS credential stores and Icecast connection testing |
 | `tests/Tropicast.Station.Core.Tests` | Unit tests for the class libraries |
 | `tests/Tropicast.Station.App.Tests` | Headless Avalonia UI tests |
@@ -54,6 +71,7 @@ Developer Tools (F12).
 | `tests/Tropicast.Station.Audio.Windows.Tests` | Windows adapter queue/lifecycle tests and opt-in hardware qualification |
 | `tests/Tropicast.Station.Audio.Linux.Tests` | Linux parser/session tests and opt-in synthetic native capture integration |
 | `tests/Tropicast.Station.Audio.MacOS.Tests` | macOS adapter lifecycle/permission tests and native enumeration smoke test |
+| `tests/Tropicast.Station.Encoding.Tests` | Encoder settings, real bundled codec/lifecycle tests and opt-in Icecast listener POC |
 | `tests/Tropicast.Station.Infrastructure.Tests` | Persistence, source handshake and native credential-store tests |
 
 Dependencies point inward: `App` → `Audio` / `Encoding` / `Infrastructure` → `Core`.
@@ -233,8 +251,8 @@ only be enabled on an isolated server. PipeWire capture is also exercised
 locally. Real USB/mixer hardware and sustained audible-glitch qualification
 remain station-side checks; these synthetic tests do not prove those.
 
-This issue delivers PCM preview/capture, not broadcasting; FFmpeg encoding and
-Go Live are subsequent issues (#8–#9).
+Audio preview remains local-only. The encoding backend is available separately;
+Go Live UI wiring follows in #9.
 
 ### macOS Core Audio / system audio capture
 
@@ -301,7 +319,66 @@ and hardware qualification are pending on a Mac.** Check the signed development
 bundle with a built-in mic and an external interface, permission grant/denial,
 system playback, USB unplug/replug, default changes during capture, stop/restart
 and sustained preview on both hardware architectures. PCM preview is not yet
-broadcasting; encoding and Go Live remain #8–#9.
+broadcasting; Go Live wiring remains #9.
+
+## FFmpeg / Icecast publishing backend
+
+`IBroadcastEncoder.StartAsync` accepts a resolved `BroadcastTarget` and
+`EncoderOptions` (float32, mono/stereo, 44.1/48 kHz, 32–320 kbps; default
+48 kHz stereo/128 kbps). The profile must use **audio/mpeg**. It returns an
+`IEncoderSession`; hand normalized `AudioCaptureService.FrameAvailable` frames
+to `Submit`, observe `Completion` and `Snapshot`, then stop/dispose the session.
+`Submit` copies PCM and never blocks a capture callback. Invalid format,
+non-finite samples, 256-packet capacity or a two-second byte-budget overrun
+explicitly fail the stream. One publisher per encoder service is allowed.
+The Go Live controller that connects these services to the UI follows in #9;
+starting preview does **not** broadcast.
+
+FFmpeg reads raw float32 on stdin and writes MP3 on stdout. The managed
+publisher shares its authenticated PUT/`Expect: 100-continue` handshake with
+**Test connection**, then sends the encoded audio directly to Icecast. Passwords
+never appear in FFmpeg arguments, environment, URLs, temporary files or stderr.
+Authentication failure, occupied mount and denied publishing have specific
+statuses; disconnect, invalid responses, TLS certificate failures, pipe errors
+and ten-second network-write stalls are explicit failures. No redirects or
+certificate bypasses are allowed. FFmpeg stderr is drained/classified without
+retaining native text. State becomes **Streaming** only after encoded bytes
+are sent (not proof that a listener has received them).
+
+Stop completes the PCM queue and closes stdin, allowing FFmpeg to flush MP3.
+If shutdown exceeds five seconds, the owned process tree is killed and reaped.
+DI host disposal stops an active session even if its caller forgot to do so.
+The child owns no server connection: if the parent exits abruptly, its redirected
+stdin/stdout/stderr pipes close; EOF/broken pipes make FFmpeg exit rather than
+leave a connected source behind. The publisher itself disconnects with the
+parent's socket. Graceful exit and failures also observe all pipe tasks before
+disposing native streams.
+
+The app loads only `ffmpeg/ffmpeg` (`ffmpeg.exe` on Windows) relative to its
+application directory, never an arbitrary PATH executable. Build/publish copies
+the RID-specific bundle, **including corresponding sources and full licenses**.
+The minimal build includes LAME and TLS (OpenSSL on Linux, Schannel on Windows,
+Secure Transport on macOS), with no GPL-only/nonfree features. See
+[`THIRD_PARTY_NOTICES`](THIRD_PARTY_NOTICES) for versions, hashes, licensing
+and redistribution obligations. Users can replace/rebuild this separate
+executable; commercial distribution still requires packaging/license review.
+
+After building the bundle, `dotnet test tests/Tropicast.Station.Encoding.Tests`
+exercises real encoding, decode, auth/mount status mapping, queue errors,
+network disconnect, graceful/forced process cleanup and owner disposal.
+Without a bundle, native codec tests explicitly skip; CI requires one.
+For the real listener POC, run a local Icecast with source password
+`tc-test-source` and set its port:
+
+```bash
+TC_TEST_ICECAST_PORT=18000 dotnet test tests/Tropicast.Station.Encoding.Tests -c Release
+```
+
+The POC sends a generated 600 Hz tone to a unique mount, checks the listener's
+HTTP success and `audio/mpeg`, captures over four seconds of MP3, decodes it
+with the bundled FFmpeg, and verifies stop. No microphone is recorded.
+Linux CI runs this against an isolated localhost Icecast in addition to the
+PulseAudio/keyring tests; all three OS jobs build and exercise native FFmpeg.
 
 ## Connection profiles
 
