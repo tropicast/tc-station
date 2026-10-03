@@ -34,12 +34,13 @@ public sealed partial class ProfileEditorViewModel(
     [ObservableProperty] public partial string ValidationMessage { get; set; } = "Enter a profile name and source password.";
     [ObservableProperty] public partial string Status { get; set; } = "";
     [ObservableProperty] public partial bool IsBusy { get; set; }
+    [ObservableProperty] public partial bool IsBroadcastLocked { get; set; }
 
-    public bool CanManage => !IsBusy;
+    public bool CanManage => !IsBusy && !IsBroadcastLocked;
     public string PasswordHint => _hasStoredPassword ? "Password stored securely. Leave blank to keep it." : "Source password is required.";
     public string TransportWarning => UseTls ? "" : "TLS is off: source credentials and audio will cross the network unencrypted.";
-    private bool CanSave => !IsBusy && ValidationMessage.Length == 0;
-    private bool CanSelect => !IsBusy && SelectedProfile is not null;
+    private bool CanSave => CanManage && ValidationMessage.Length == 0;
+    private bool CanSelect => CanManage && SelectedProfile is not null;
 
     protected override void OnPropertyChanged(System.ComponentModel.PropertyChangedEventArgs e)
     {
@@ -50,7 +51,7 @@ public sealed partial class ProfileEditorViewModel(
             OnPropertyChanged(nameof(TransportWarning));
         }
 
-        if (e.PropertyName is nameof(IsBusy) or nameof(SelectedProfile) or nameof(ValidationMessage))
+        if (e.PropertyName is nameof(IsBusy) or nameof(IsBroadcastLocked) or nameof(SelectedProfile) or nameof(ValidationMessage))
         {
             SaveCommand.NotifyCanExecuteChanged();
             TestCommand.NotifyCanExecuteChanged();

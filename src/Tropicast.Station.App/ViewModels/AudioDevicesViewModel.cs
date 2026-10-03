@@ -29,13 +29,14 @@ public sealed partial class AudioDevicesViewModel : ViewModelBase, IDisposable
     [ObservableProperty] public partial int Channels { get; set; } = 2;
     [ObservableProperty] public partial bool IsCapturing { get; set; }
     [ObservableProperty] public partial bool IsBusy { get; set; }
+    [ObservableProperty] public partial bool IsBroadcastLocked { get; set; }
     [ObservableProperty] public partial string Status { get; set; } = "Select a source, then start preview.";
 
-    public bool CanChoose => !IsBusy && !IsCapturing && !_disposed;
+    public bool CanChoose => !IsBusy && !IsCapturing && !IsBroadcastLocked && !_disposed;
     private bool CanStart => CanChoose && (SelectedInput ?? SelectedOutput) is not null
         && SampleRates.Contains(SampleRate) && ChannelCounts.Contains(Channels);
-    private bool CanStop => !IsBusy && IsCapturing && !_disposed;
-    private bool CanRefresh => !IsBusy && !_disposed;
+    private bool CanStop => !IsBusy && IsCapturing && !IsBroadcastLocked && !_disposed;
+    private bool CanRefresh => !IsBusy && !IsBroadcastLocked && !_disposed;
 
     partial void OnSelectedInputChanged(AudioDevice? value)
     {
@@ -56,7 +57,7 @@ public sealed partial class AudioDevicesViewModel : ViewModelBase, IDisposable
     protected override void OnPropertyChanged(System.ComponentModel.PropertyChangedEventArgs e)
     {
         base.OnPropertyChanged(e);
-        if (e.PropertyName is nameof(IsBusy) or nameof(IsCapturing) or nameof(SelectedInput) or nameof(SelectedOutput)
+        if (e.PropertyName is nameof(IsBusy) or nameof(IsCapturing) or nameof(IsBroadcastLocked) or nameof(SelectedInput) or nameof(SelectedOutput)
             or nameof(SampleRate) or nameof(Channels))
         {
             StartCommand.NotifyCanExecuteChanged();
@@ -139,7 +140,7 @@ public sealed partial class AudioDevicesViewModel : ViewModelBase, IDisposable
         SelectedInput = Inputs.FirstOrDefault(d => d.Id == inputId);
         SelectedOutput = Outputs.FirstOrDefault(d => d.Id == outputId);
         IsCapturing = snapshot.IsCapturing;
-        Status = snapshot.Message;
+        Status = IsBroadcastLocked && snapshot.IsCapturing ? "Audio capture is feeding the broadcast encoder." : snapshot.Message;
     }
 
     private static void Replace(ObservableCollection<AudioDevice> collection, IEnumerable<AudioDevice> devices)

@@ -41,9 +41,16 @@ internal static class AppHost
         builder.Services.AddSingleton<MainViewModel>();
         builder.Services.AddSingleton<ProfileEditorViewModel>();
         builder.Services.AddSingleton<AudioDevicesViewModel>();
-        builder.Services.AddTransient(sp => new MainWindow
+        builder.Services.AddSingleton<BroadcastViewModel>();
+        builder.Services.AddSingleton<IBroadcastConfirmation, BroadcastConfirmation>();
+        builder.Services.AddTransient(sp =>
         {
-            DataContext = sp.GetRequiredService<MainViewModel>(),
+            var window = new MainWindow { DataContext = sp.GetRequiredService<MainViewModel>() };
+            if (sp.GetRequiredService<IBroadcastConfirmation>() is BroadcastConfirmation confirmation)
+            {
+                confirmation.Owner = window;
+            }
+            return window;
         });
         configureServices?.Invoke(builder.Services);
 

@@ -10,6 +10,7 @@ public static class ServiceCollectionExtensions
     {
         ArgumentNullException.ThrowIfNull(services);
         services.TryAddSingleton<IBroadcastEncoder, FfmpegBroadcastEncoder>();
+        services.TryAddSingleton<BroadcastController>();
         return services;
     }
 }

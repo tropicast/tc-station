@@ -8,11 +8,13 @@ using Tropicast.Station.App.Views;
 
 namespace Tropicast.Station.App;
 
+[System.Diagnostics.CodeAnalysis.SuppressMessage("Design", "CA1001", Justification = "Avalonia owns the application; OnExit disposes the tray and host.")]
 public partial class App : Application
 {
     private static readonly TimeSpan HostShutdownTimeout = TimeSpan.FromSeconds(5);
 
     private IHost? _host;
+    private BroadcastTray? _tray;
 
     public override void Initialize() => AvaloniaXamlLoader.Load(this);
 
@@ -28,6 +30,7 @@ public partial class App : Application
                 () => Dispatcher.UIThread.Post(() => desktop.Shutdown()));
 
             desktop.MainWindow = _host.Services.GetRequiredService<MainWindow>();
+            _tray = new BroadcastTray(desktop.MainWindow, _host.Services.GetRequiredService<ViewModels.BroadcastViewModel>());
             desktop.Exit += OnExit;
         }
 
@@ -42,6 +45,8 @@ public partial class App : Application
         }
 
         using var cts = new CancellationTokenSource(HostShutdownTimeout);
+        _tray?.Dispose();
+        _tray = null;
         _host.StopAsync(cts.Token).GetAwaiter().GetResult();
         _host.Dispose();
         _host = null;
