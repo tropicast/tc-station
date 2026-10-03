@@ -31,7 +31,7 @@ public sealed class AudioDevicesTests
         await model.RefreshCommand.ExecuteAsync(null);
         Assert.Single(model.Inputs);
         Assert.Single(model.Outputs);
-        var view = window.FindControl<AudioDevicesView>("AudioDevices")!;
+        var view = window.FindControl<AudioDevicesView>("BroadcastAudioDevices")!;
         Assert.Single(view.FindControl<ComboBox>("InputPicker")!.Items);
         Assert.Single(view.FindControl<ComboBox>("OutputPicker")!.Items);
         Assert.False(model.StartCommand.CanExecute(null));

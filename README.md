@@ -8,7 +8,7 @@ an Icecast mount.
 > Status: desktop scaffold, manual connection profiles, and shared audio
 > capture/device-picker pipeline, Windows WASAPI, Linux PulseAudio/PipeWire and
 > macOS Core Audio/ScreenCaptureKit adapters and supervised FFmpeg/Icecast
-> publishing backend (issues #2–#8). Go Live UI, meters and reconnect remain
+> publishing backend and Go Live workflow (issues #2–#9). Meters and reconnect remain
 > in the MVP epic, #1.
 
 ## Prerequisites
@@ -251,8 +251,8 @@ only be enabled on an isolated server. PipeWire capture is also exercised
 locally. Real USB/mixer hardware and sustained audible-glitch qualification
 remain station-side checks; these synthetic tests do not prove those.
 
-Audio preview remains local-only. The encoding backend is available separately;
-Go Live UI wiring follows in #9.
+Audio preview remains local-only. Use **Go Live** in the Broadcast tab to
+publish the selected source through the encoding backend.
 
 ### macOS Core Audio / system audio capture
 
@@ -319,7 +319,7 @@ and hardware qualification are pending on a Mac.** Check the signed development
 bundle with a built-in mic and an external interface, permission grant/denial,
 system playback, USB unplug/replug, default changes during capture, stop/restart
 and sustained preview on both hardware architectures. PCM preview is not yet
-broadcasting; Go Live wiring remains #9.
+broadcasting; use the separate **Go Live** control to publish it.
 
 ## FFmpeg / Icecast publishing backend
 
@@ -331,8 +331,8 @@ to `Submit`, observe `Completion` and `Snapshot`, then stop/dispose the session.
 `Submit` copies PCM and never blocks a capture callback. Invalid format,
 non-finite samples, 256-packet capacity or a two-second byte-budget overrun
 explicitly fail the stream. One publisher per encoder service is allowed.
-The Go Live controller that connects these services to the UI follows in #9;
-starting preview does **not** broadcast.
+The Go Live controller connects these services to the UI; starting preview
+does **not** broadcast.
 
 FFmpeg reads raw float32 on stdin and writes MP3 on stdout. The managed
 publisher shares its authenticated PUT/`Expect: 100-continue` handshake with
@@ -382,6 +382,49 @@ HTTP success and `audio/mpeg`, captures over four seconds of MP3, decodes it
 with the bundled FFmpeg, and verifies stop. No microphone is recorded.
 Linux CI runs this against an isolated localhost Icecast in addition to the
 PulseAudio/keyring tests; all three OS jobs build and exercise native FFmpeg.
+
+## Go Live / Stop
+
+The first **Broadcast** tab provides the three-step station workflow:
+select a **saved connection profile**, select **one input or system-output
+source**, then press **Go Live**. Create/save credentials in the Connection
+profiles tab first. The current encoder requires an **audio/mpeg** profile and
+the bundled FFmpeg described above. Starting a broadcast replaces any active
+local preview with capture in the selected encoder format.
+
+The status badge and text expose **Idle → Connecting → Live → Stopping → Idle**,
+plus **Error** on capture/connection/encoder failure. **Live** begins when the
+encoder sends MP3 bytes, not just when authentication succeeds. The elapsed
+counter starts then and retains the last session duration after stopping.
+An idle system-output endpoint may not emit audio yet and remains Connecting.
+**Reconnecting** is represented in the shared state contract/tray but is not
+entered until the reconnect/backoff policy is implemented in #11. Interrupted
+streams currently stop both capture and encoding and show Error; retry is manual
+with Go Live. There is no silent source/profile fallback.
+
+While Connecting/Live/Stopping, profile editing/testing, source selection,
+encoder-format controls and local preview commands are locked. **Stop broadcast**
+asks for confirmation when live; **Keep broadcasting** (or Escape) cancels the
+dialog. Stop while Connecting cancels startup without a live-stream warning.
+Closing the window or using tray **Quit** also asks before ending a live stream;
+confirming stops capture and flushes/reaps FFmpeg before closing.
+SIGTERM/OS/process termination still performs host cleanup where possible,
+but cannot always present an interactive confirmation.
+
+The tray/menu-bar uses the Tropicast logo, with a red live dot for Live (and
+future Reconnecting), status/elapsed tooltip and menu, **Show**, **Stop broadcast**
+and **Quit** actions. Minimize keeps broadcasting; close means quit after
+confirmation, not hide-to-tray. A supported system tray is optional: the same
+controls remain available in the window. Buttons/selectors have screen-reader
+names; normal Tab navigation and Enter/Space activate controls. The prominent
+Go Live/Stop controls remain visible while source settings scroll.
+
+Headless tests cover profile/source prerequisites, keyboard start/stop, state
+text, selector locks, tray status, denied Stop/close, accepted close, capture
+removal and encoder errors. The opt-in Icecast suite additionally runs the
+whole controller with synthetic capture → converter → FFmpeg → real listener
+and verifies decodable MP3 and stop. This is not a physical microphone or
+manual platform accessibility qualification.
 
 ## Connection profiles
 
