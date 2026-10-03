@@ -6,7 +6,7 @@ Cross-platform desktop broadcaster for Tropicast radio stations, built with
 an Icecast mount.
 
 > Status: desktop scaffold, manual connection profiles, and shared audio
-> capture/device-picker pipeline and Windows WASAPI adapter (issues #2–#5). Linux/macOS adapters (#6–#7),
+> capture/device-picker pipeline, Windows WASAPI and Linux PulseAudio/PipeWire adapters (issues #2–#6). The macOS adapter (#7),
 > encoding, meters and Go Live controls remain in the MVP epic, #1.
 
 ## Prerequisites
@@ -16,6 +16,10 @@ an Icecast mount.
 - Linux credentials require **libsecret's `secret-tool`** (`libsecret-tools` on
   Debian/Ubuntu, `libsecret` on Arch) and an unlocked Secret Service keyring,
   such as GNOME Keyring. There is no plaintext fallback.
+- Linux audio requires **`pactl` and `parec`** (`pulseaudio-utils` on
+  Debian/Ubuntu, `libpulse` on Arch), plus a running PulseAudio server or
+  PipeWire with **`pipewire-pulse`**. Use a recent `pactl` supporting JSON output
+  (PulseAudio 15+). No root access is required for capture.
 
 ## Build, test and run
 
@@ -36,12 +40,14 @@ Developer Tools (F12).
 | `src/Tropicast.Station.Core` | Domain model and shared services; no UI or platform dependencies |
 | `src/Tropicast.Station.Audio` | Audio capture abstractions and platform adapters |
 | `src/Tropicast.Station.Audio.Windows` | WASAPI shared-mode input and render-endpoint loopback via NAudio |
+| `src/Tropicast.Station.Audio.Linux` | PulseAudio/pipewire-pulse sources and sink monitors via libpulse clients |
 | `src/Tropicast.Station.Encoding` | Encoder pipeline (bundled FFmpeg supervision) |
 | `src/Tropicast.Station.Infrastructure` | JSON profiles, OS credential stores and Icecast connection testing |
 | `tests/Tropicast.Station.Core.Tests` | Unit tests for the class libraries |
 | `tests/Tropicast.Station.App.Tests` | Headless Avalonia UI tests |
 | `tests/Tropicast.Station.Audio.Tests` | PCM conversion, synthetic capture and hot-plug lifecycle tests |
 | `tests/Tropicast.Station.Audio.Windows.Tests` | Windows adapter queue/lifecycle tests and opt-in hardware qualification |
+| `tests/Tropicast.Station.Audio.Linux.Tests` | Linux parser/session tests and opt-in synthetic native capture integration |
 | `tests/Tropicast.Station.Infrastructure.Tests` | Persistence, source handshake and native credential-store tests |
 
 Dependencies point inward: `App` → `Audio` / `Encoding` / `Infrastructure` → `Core`.
@@ -55,8 +61,9 @@ PCM through the shared conversion pipeline; it does not play audio, encode it,
 or publish to Icecast. Levels and broadcasting controls are separate MVP issues.
 
 On Windows, the normal app lists active WASAPI inputs and playback devices
-(loopback sources). Linux/macOS capture adapters are not installed yet: on
-those systems the app explicitly says so and lists no hardware devices.
+(loopback sources). On Linux, it lists PulseAudio/PipeWire inputs and sink
+monitor sources. The macOS adapter is not installed yet: the app explicitly
+says so and lists no hardware devices on macOS.
 Run the synthetic adapter on any OS for demos:
 
 ```bash
@@ -82,8 +89,8 @@ discard audio. Device loss throws `IOException`.
 capture on removal or native-format changes, and emits a visible error without
 switching to another device. Idle hot-plug/default-device changes refresh the
 picker automatically. The selected device is preserved by ID on renames.
-The Windows WASAPI adapter is registered before the shared audio services;
-PipeWire/PulseAudio and Core Audio adapters will follow the same pattern.
+The Windows WASAPI and Linux PulseAudio adapters are registered before the
+shared audio services; the Core Audio adapter will follow the same pattern.
 Use `TryAdd` registration so an explicitly registered adapter is not overwritten.
 
 `PcmConverter` produces float32 mono/stereo PCM for the future encoder using
@@ -171,6 +178,57 @@ broadcast is not available yet.
 
 NAudio.Wasapi/NAudio.Core 2.4.0 are MIT-licensed; package license metadata and
 upstream attribution are available at <https://github.com/naudio/NAudio>.
+
+### Linux PulseAudio / PipeWire capture
+
+The app automatically selects `LinuxAudioCaptureProvider` on Linux unless
+`--demo-audio` is passed. It supervises `pactl` (JSON enumeration and topology
+subscription) and `parec` (raw PCM capture), both libpulse clients. This uses
+the same PulseAudio protocol on PulseAudio and on PipeWire's `pipewire-pulse`
+compatibility server; no shell commands or device-name interpolation are used.
+
+Microphones and mixer/interface sources appear under inputs. Sink **monitor**
+sources appear under system output: choose the monitor of the output used by
+your player. A monitor captures the whole sink, not one application. Route the
+player to a dedicated sink for application-only capture. Suspended/idle sources
+remain selectable; recording starts only when you click **Start preview**.
+
+Default source and sink changes refresh their respective default labels
+automatically. Selection stays pinned to an explicit source name, rather than
+silently following a new default. `stream.dont-move=true` prevents automatic
+fallback when the selected endpoint disappears. Device removal or native format
+changes stop preview with an error; replugging updates the picker. Audio-server
+or subscription failures are visible, and notifications reconnect every two
+seconds. Missing packages, server access failures and capture failures report
+guidance rather than returning an empty success.
+
+`parec` supplies float32 little-endian PCM at the source's advertised rate and
+channel count (libpulse converts its original encoding). The shared converter
+handles the encoder target format. Capture requests 40 ms server latency and
+20 ms processing; actual latency depends on the server. Owned 20 ms packets
+enter a bounded 100-packet queue (approximately two seconds); overload fails
+explicitly. Stop/cancellation terminates the owned child and disposal reaps it;
+shutdown also terminates the topology subscription.
+
+Run the synthetic native integration test on a running audio server:
+
+```bash
+TC_TEST_PULSE=1 dotnet test tests/Tropicast.Station.Audio.Linux.Tests -c Release
+```
+
+The test additionally needs `pacat` (in the same utils/libpulse package).
+It creates a uniquely named null sink and remapped input, plays only a generated
+600 Hz tone into that sink, checks input/monitor signal and stop/restart,
+then removes its sources and checks automatic capture shutdown. It does not
+record personal microphones or change desktop default devices, and removes its
+modules/child processes afterwards. CI runs it against an isolated PulseAudio
+server; `TC_TEST_PULSE_DEFAULTS=1` additionally checks default changes and must
+only be enabled on an isolated server. PipeWire capture is also exercised
+locally. Real USB/mixer hardware and sustained audible-glitch qualification
+remain station-side checks; these synthetic tests do not prove those.
+
+This issue delivers PCM preview/capture, not broadcasting; FFmpeg encoding and
+Go Live are subsequent issues (#8–#9).
 
 ## Connection profiles
 

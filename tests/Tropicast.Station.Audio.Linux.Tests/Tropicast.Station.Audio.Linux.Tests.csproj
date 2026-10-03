@@ -1,0 +1,5 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <ItemGroup>
+    <ProjectReference Include="..\..\src\Tropicast.Station.Audio.Linux\Tropicast.Station.Audio.Linux.csproj" />
+  </ItemGroup>
+</Project>

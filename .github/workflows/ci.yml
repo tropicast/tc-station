@@ -46,16 +46,30 @@ jobs:
           dotnet test Tropicast.Station.slnx -c Release --no-build
           --logger trx --results-directory TestResults
 
-      - name: Prepare Linux keyring
+      - name: Prepare Linux keyring and PulseAudio
         if: runner.os == 'Linux'
-        run: sudo apt-get update -qq && sudo apt-get install -y -qq libsecret-tools gnome-keyring dbus
+        run: sudo apt-get update -qq && sudo apt-get install -y -qq libsecret-tools gnome-keyring dbus pulseaudio pulseaudio-utils
 
-      - name: Test (Linux with unlocked keyring)
+      - name: Test (Linux with unlocked keyring and isolated PulseAudio)
         if: runner.os == 'Linux'
         run: |
           dbus-run-session -- bash -e -c '
             printf "%s" "tc-ci-test-keyring" | gnome-keyring-daemon --unlock --components=secrets
-            TC_TEST_OS_SECRETS=1 dotnet test Tropicast.Station.slnx -c Release --no-build --logger trx --results-directory TestResults
+            export PULSE_SERVER="unix:$RUNNER_TEMP/tc-pulse.sock"
+            pulseaudio -n --daemonize=no --exit-idle-time=-1 --use-pid-file=no \
+              --load="module-native-protocol-unix socket=$RUNNER_TEMP/tc-pulse.sock auth-anonymous=1" \
+              --load="module-null-sink sink_name=tc_ci_default" > "$RUNNER_TEMP/tc-pulse.log" 2>&1 &
+            pulse_pid=$!
+            trap "kill $pulse_pid; wait $pulse_pid || true" EXIT
+            for attempt in {1..50}; do
+              if pactl info > /dev/null 2>&1; then break; fi
+              sleep 0.1
+            done
+            pactl info || { cat "$RUNNER_TEMP/tc-pulse.log"; exit 1; }
+            pactl set-default-sink tc_ci_default
+            pactl set-default-source tc_ci_default.monitor
+            TC_TEST_OS_SECRETS=1 TC_TEST_PULSE=1 TC_TEST_PULSE_DEFAULTS=1 \
+              dotnet test Tropicast.Station.slnx -c Release --no-build --logger trx --results-directory TestResults
           '
 
       - name: Test (macOS with temporary keychain)

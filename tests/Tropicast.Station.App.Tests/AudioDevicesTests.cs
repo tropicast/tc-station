@@ -5,6 +5,7 @@ using Microsoft.Extensions.DependencyInjection;
 using Tropicast.Station.App.ViewModels;
 using Tropicast.Station.App.Views;
 using Tropicast.Station.Audio;
+using Tropicast.Station.Audio.Linux;
 using Tropicast.Station.Audio.Windows;
 using Tropicast.Station.Core.Profiles;
 using Tropicast.Station.Tests;
@@ -74,6 +75,10 @@ public sealed class AudioDevicesTests
         if (OperatingSystem.IsWindows())
         {
             Assert.IsType<WindowsAudioCaptureProvider>(normal.Services.GetRequiredService<IAudioCaptureProvider>());
+        }
+        else if (OperatingSystem.IsLinux())
+        {
+            Assert.IsType<LinuxAudioCaptureProvider>(normal.Services.GetRequiredService<IAudioCaptureProvider>());
         }
         else
         {
