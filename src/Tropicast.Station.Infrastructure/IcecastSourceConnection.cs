@@ -61,13 +61,13 @@ public sealed class IcecastSourceConnection : IAsyncDisposable
                 + $"Authorization: Basic {credentials}\r\nContent-Type: {target.Profile.ContentType}\r\n"
                 + "Expect: 100-continue\r\nIce-Public: 0\r\nConnection: close\r\n\r\n";
             await stream.WriteAsync(Encoding.UTF8.GetBytes(request), deadline.Token).ConfigureAwait(false);
-            var code = await ReadResponseAsync(stream, deadline.Token).ConfigureAwait(false);
-            if (code is not (100 or 200 or 201))
+            var response = await ReadResponseAsync(stream, deadline.Token).ConfigureAwait(false);
+            if (response.Code is not (100 or 200 or 201))
             {
-                throw Rejected(code);
+                throw Rejected(response);
             }
             accepted = true;
-            return new(client, stream, code == 100);
+            return new(client, stream, response.Code == 100);
         }
         catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested)
         {
@@ -104,23 +104,29 @@ public sealed class IcecastSourceConnection : IAsyncDisposable
     {
         if (_expectFinalResponse)
         {
-            var code = await ReadResponseAsync(_stream, cancellationToken).ConfigureAwait(false);
-            throw Rejected(code);
+            var response = await ReadResponseAsync(_stream, cancellationToken).ConfigureAwait(false);
+            if (response.Code is not (200 or 201))
+            {
+                throw Rejected(response);
+            }
+            // Icecast 2.4 acknowledges PUT with 200 after 100-continue, but keeps receiving audio.
         }
         var byteBuffer = new byte[1];
         await _stream.ReadAsync(byteBuffer, cancellationToken).ConfigureAwait(false);
         throw new IOException("Icecast closed the source connection.");
     }
 
-    private static IcecastSourceException Rejected(int code) => code switch
+    private sealed record SourceResponse(int Code, bool MountInUse = false);
+
+    private static IcecastSourceException Rejected(SourceResponse response) => response switch
     {
-        401 => new(ConnectionTestStatus.AuthenticationFailed, "Authentication failed. Check the source username and password."),
-        409 => new(ConnectionTestStatus.MountInUse, "The mount is already in use. Stop its current source or choose another mount."),
-        403 => new(ConnectionTestStatus.Rejected, "Publishing was denied (mount permissions or source capacity)."),
-        _ => new(ConnectionTestStatus.Rejected, $"The server rejected or ended the source stream (HTTP {code})."),
+        { Code: 401 } => new(ConnectionTestStatus.AuthenticationFailed, "Authentication failed. Check the source username and password."),
+        { Code: 409 } or { MountInUse: true } => new(ConnectionTestStatus.MountInUse, "The mount is already in use. Stop its current source or choose another mount."),
+        { Code: 403 } => new(ConnectionTestStatus.Rejected, "Publishing was denied (mount permissions or source capacity)."),
+        _ => new(ConnectionTestStatus.Rejected, $"The server rejected or ended the source stream (HTTP {response.Code})."),
     };
 
-    private static async Task<int> ReadResponseAsync(Stream stream, CancellationToken cancellationToken)
+    private static async Task<SourceResponse> ReadResponseAsync(Stream stream, CancellationToken cancellationToken)
     {
         var bytes = new byte[1];
         var header = new StringBuilder();
@@ -134,12 +140,26 @@ public sealed class IcecastSourceConnection : IAsyncDisposable
             if (header.Length >= 4 && header[^4] == '\r' && header[^3] == '\n'
                 && header[^2] == '\r' && header[^1] == '\n')
             {
-                var firstLine = header.ToString().Split("\r\n", 2, StringSplitOptions.None)[0];
-                var parts = firstLine.Split(' ', StringSplitOptions.RemoveEmptyEntries);
+                var lines = header.ToString().Split("\r\n", StringSplitOptions.None);
+                var parts = lines[0].Split(' ', StringSplitOptions.RemoveEmptyEntries);
                 if (parts.Length >= 2 && parts[0].StartsWith("HTTP/1.", StringComparison.Ordinal)
                     && int.TryParse(parts[1], NumberStyles.None, CultureInfo.InvariantCulture, out var code))
                 {
-                    return code;
+                    if (code == 403 && lines.Any(line => line.StartsWith("Content-Type:", StringComparison.OrdinalIgnoreCase)
+                        && line["Content-Type:".Length..].Trim().StartsWith("text/plain", StringComparison.OrdinalIgnoreCase)))
+                    {
+                        // Older Icecast uses 403 plus this fixed body instead of 409. Inspect only
+                        // the known prefix; do not retain or display server-provided response text.
+                        foreach (var expected in "Mountpoint in use")
+                        {
+                            if (await stream.ReadAsync(bytes, cancellationToken).ConfigureAwait(false) == 0 || bytes[0] != expected)
+                            {
+                                return new(code);
+                            }
+                        }
+                        return new(code, MountInUse: true);
+                    }
+                    return new(code);
                 }
                 break;
             }

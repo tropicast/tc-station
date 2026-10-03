@@ -65,11 +65,13 @@ public sealed class EncoderTests
             cancellationToken: TestContext.Current.CancellationToken));
     }
 
-    [Fact]
-    public async Task Bundled_encoder_produces_decodable_MP3_and_graceful_stop_reaps_child()
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task Bundled_encoder_produces_decodable_MP3_and_graceful_stop_reaps_child(bool finalAcknowledgement)
     {
         RequireBundle();
-        await using var server = new FakeIcecast();
+        await using var server = new FakeIcecast(finalAcknowledgement: finalAcknowledgement);
         using var encoder = CreateEncoder();
         var session = await encoder.StartAsync(server.Target, cancellationToken: TestContext.Current.CancellationToken);
         await FeedToneAsync(session, 4);
@@ -351,15 +353,15 @@ internal sealed class FakeIcecast : IAsyncDisposable
     internal Task Done { get; }
     internal Task<string> Header => _header.Task;
 
-    internal FakeIcecast(int status = 100, int? disconnectAfterBytes = null)
+    internal FakeIcecast(int status = 100, int? disconnectAfterBytes = null, bool finalAcknowledgement = false)
     {
         _listener.Start();
         Target = new(new(Guid.NewGuid(), "Test source", "127.0.0.1",
             ((IPEndPoint)_listener.LocalEndpoint).Port, "/test.mp3"), "unique-test-password");
-        Done = ServeAsync(status, disconnectAfterBytes);
+        Done = ServeAsync(status, disconnectAfterBytes, finalAcknowledgement);
     }
 
-    private async Task ServeAsync(int status, int? disconnectAfterBytes)
+    private async Task ServeAsync(int status, int? disconnectAfterBytes, bool finalAcknowledgement)
     {
         using var client = await _listener.AcceptTcpClientAsync(_shutdown.Token);
         await using var stream = client.GetStream();
@@ -372,6 +374,10 @@ internal sealed class FakeIcecast : IAsyncDisposable
         }
         _header.SetResult(text.ToString());
         await stream.WriteAsync(System.Text.Encoding.ASCII.GetBytes($"HTTP/1.1 {status} Test\r\n\r\n"), _shutdown.Token);
+        if (finalAcknowledgement)
+        {
+            await stream.WriteAsync("HTTP/1.0 200 OK\r\n\r\n"u8.ToArray(), _shutdown.Token);
+        }
         var buffer = new byte[8192];
         int count;
         while ((count = await stream.ReadAsync(buffer, _shutdown.Token)) != 0)

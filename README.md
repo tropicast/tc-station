@@ -339,7 +339,10 @@ publisher shares its authenticated PUT/`Expect: 100-continue` handshake with
 **Test connection**, then sends the encoded audio directly to Icecast. Passwords
 never appear in FFmpeg arguments, environment, URLs, temporary files or stderr.
 Authentication failure, occupied mount and denied publishing have specific
-statuses; disconnect, invalid responses, TLS certificate failures, pipe errors
+statuses. Both Icecast 2.5's 409 and Icecast 2.4's 403 with the fixed
+`Mountpoint in use` plaintext reason are recognized without logging response
+text; 2.4's `100 Continue` followed by `200 OK` keeps the stream active.
+Disconnect, invalid responses, TLS certificate failures, pipe errors
 and ten-second network-write stalls are explicit failures. No redirects or
 certificate bypasses are allowed. FFmpeg stderr is drained/classified without
 retaining native text. State becomes **Streaming** only after encoded bytes

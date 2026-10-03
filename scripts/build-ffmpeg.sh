@@ -70,7 +70,7 @@ fi
     --enable-filter=aresample,aformat,anull --enable-protocol=pipe,file,tcp,udp,tls,http,https,icecast \
     --pkg-config-flags=--static --extra-cflags="-I$prefix/include" \
     --cc="${CC:-cc}" --extra-ldflags="$linkFlags" "${tls[@]}" "${arch[@]}"
-  make -j"$jobs" ffmpeg
+  make -j"$jobs" "ffmpeg$suffix"
 )
 cp "$work/ffmpeg-8.0.1/ffmpeg$suffix" "$output/ffmpeg$suffix"
 cp "$work/ffmpeg-8.0.1/COPYING.LGPLv3" "$output/licenses/FFmpeg-LGPL-3.0.txt"
