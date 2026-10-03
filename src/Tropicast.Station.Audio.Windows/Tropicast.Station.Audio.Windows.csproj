@@ -1,0 +1,9 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <ItemGroup>
+    <ProjectReference Include="..\Tropicast.Station.Audio\Tropicast.Station.Audio.csproj" />
+    <PackageReference Include="NAudio.Wasapi" />
+  </ItemGroup>
+  <ItemGroup>
+    <InternalsVisibleTo Include="Tropicast.Station.Audio.Windows.Tests" />
+  </ItemGroup>
+</Project>

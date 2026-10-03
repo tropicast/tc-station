@@ -5,6 +5,7 @@ using Microsoft.Extensions.DependencyInjection;
 using Tropicast.Station.App.ViewModels;
 using Tropicast.Station.App.Views;
 using Tropicast.Station.Audio;
+using Tropicast.Station.Audio.Windows;
 using Tropicast.Station.Core.Profiles;
 using Tropicast.Station.Tests;
 
@@ -70,7 +71,14 @@ public sealed class AudioDevicesTests
     public void Demo_is_explicit_and_does_not_replace_an_injected_platform_adapter()
     {
         using var normal = AppHost.Create([]);
-        Assert.IsType<UnavailableAudioCaptureProvider>(normal.Services.GetRequiredService<IAudioCaptureProvider>());
+        if (OperatingSystem.IsWindows())
+        {
+            Assert.IsType<WindowsAudioCaptureProvider>(normal.Services.GetRequiredService<IAudioCaptureProvider>());
+        }
+        else
+        {
+            Assert.IsType<UnavailableAudioCaptureProvider>(normal.Services.GetRequiredService<IAudioCaptureProvider>());
+        }
         using var demo = AppHost.Create(["--demo-audio"]);
         Assert.IsType<ToneAudioCaptureProvider>(demo.Services.GetRequiredService<IAudioCaptureProvider>());
     }

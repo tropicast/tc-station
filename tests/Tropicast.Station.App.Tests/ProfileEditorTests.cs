@@ -8,6 +8,7 @@ using Tropicast.Station.App.Views;
 using Tropicast.Station.Core.Broadcasting;
 using Tropicast.Station.Core.Profiles;
 using Tropicast.Station.Tests;
+using Tropicast.Station.Audio;
 
 namespace Tropicast.Station.App.Tests;
 
@@ -22,6 +23,7 @@ public sealed class ProfileEditorTests
         {
             services.AddSingleton<IProfileStore>(profiles);
             services.AddSingleton<ISecretStore>(secrets);
+            services.AddSingleton<IAudioCaptureProvider, ToneAudioCaptureProvider>();
         });
         var window = host.Services.GetRequiredService<MainWindow>();
         window.Show();

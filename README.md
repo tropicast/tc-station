@@ -6,7 +6,7 @@ Cross-platform desktop broadcaster for Tropicast radio stations, built with
 an Icecast mount.
 
 > Status: desktop scaffold, manual connection profiles, and shared audio
-> capture/device-picker pipeline (issues #2–#4). Native adapters (#5–#7),
+> capture/device-picker pipeline and Windows WASAPI adapter (issues #2–#5). Linux/macOS adapters (#6–#7),
 > encoding, meters and Go Live controls remain in the MVP epic, #1.
 
 ## Prerequisites
@@ -35,11 +35,13 @@ Developer Tools (F12).
 | `src/Tropicast.Station.App` | Avalonia UI (views, view models), composition root (`AppHost`) |
 | `src/Tropicast.Station.Core` | Domain model and shared services; no UI or platform dependencies |
 | `src/Tropicast.Station.Audio` | Audio capture abstractions and platform adapters |
+| `src/Tropicast.Station.Audio.Windows` | WASAPI shared-mode input and render-endpoint loopback via NAudio |
 | `src/Tropicast.Station.Encoding` | Encoder pipeline (bundled FFmpeg supervision) |
 | `src/Tropicast.Station.Infrastructure` | JSON profiles, OS credential stores and Icecast connection testing |
 | `tests/Tropicast.Station.Core.Tests` | Unit tests for the class libraries |
 | `tests/Tropicast.Station.App.Tests` | Headless Avalonia UI tests |
 | `tests/Tropicast.Station.Audio.Tests` | PCM conversion, synthetic capture and hot-plug lifecycle tests |
+| `tests/Tropicast.Station.Audio.Windows.Tests` | Windows adapter queue/lifecycle tests and opt-in hardware qualification |
 | `tests/Tropicast.Station.Infrastructure.Tests` | Persistence, source handshake and native credential-store tests |
 
 Dependencies point inward: `App` → `Audio` / `Encoding` / `Infrastructure` → `Core`.
@@ -52,8 +54,10 @@ and **Application / system output**. Choose one device, the encoder sample rate
 PCM through the shared conversion pipeline; it does not play audio, encode it,
 or publish to Icecast. Levels and broadcasting controls are separate MVP issues.
 
-Native capture adapters are not installed yet. The normal app explicitly says
-so and lists no hardware devices. Run the synthetic adapter for demos:
+On Windows, the normal app lists active WASAPI inputs and playback devices
+(loopback sources). Linux/macOS capture adapters are not installed yet: on
+those systems the app explicitly says so and lists no hardware devices.
+Run the synthetic adapter on any OS for demos:
 
 ```bash
 dotnet run --project src/Tropicast.Station.App -- --demo-audio
@@ -78,9 +82,9 @@ discard audio. Device loss throws `IOException`.
 capture on removal or native-format changes, and emits a visible error without
 switching to another device. Idle hot-plug/default-device changes refresh the
 picker automatically. The selected device is preserved by ID on renames.
-Adapters for WASAPI, PipeWire/PulseAudio and Core Audio will replace the default
-provider via DI; use `TryAdd` registration so an explicitly registered adapter
-is not overwritten.
+The Windows WASAPI adapter is registered before the shared audio services;
+PipeWire/PulseAudio and Core Audio adapters will follow the same pattern.
+Use `TryAdd` registration so an explicitly registered adapter is not overwritten.
 
 `PcmConverter` produces float32 mono/stereo PCM for the future encoder using
 a streaming windowed-sinc low-pass resampler with 32 input-frame lookahead
@@ -97,6 +101,76 @@ frames are already in the requested format. Subscribers run on the capture
 thread and must neither block nor throw. Marshal UI work to the UI dispatcher;
 keep any encoder handoff bounded and report overloads. `ToneAudioCaptureProvider`
 also exposes `SetDevices` for deterministic hot-plug tests and demos.
+
+### Windows WASAPI capture
+
+The app automatically selects `WindowsAudioCaptureProvider` on Windows unless
+`--demo-audio` is passed. Active capture endpoints (including USB mixer/interface
+inputs) and render endpoints are listed separately; the Windows **Multimedia**
+default is labelled. Capture targets an explicit endpoint ID and never silently
+follows a different default. Add/remove/state/default/property notifications
+trigger refresh through `IMMNotificationClient`. Removing an active endpoint
+stops capture and shows guidance; replugging it refreshes the picker.
+
+Render-endpoint loopback captures **all audio played through that endpoint**,
+not a single application/process. Choose the endpoint used by your audio player.
+WASAPI may deliver no packets while a render endpoint is idle; this adapter
+does not invent silence or play a keepalive tone. Continuous loopback audio
+requires an actively playing source.
+
+Capture uses WASAPI **shared mode**, with 100 ms native buffers and worker-thread
+initialization (no captured UI synchronization context). PCM16 and float32 mix
+formats are preserved. PCM24/PCM32 mix formats request float32 using WASAPI's
+shared-mode conversion, preserving the endpoint's sample rate/channel count.
+The device format in the picker therefore describes the PCM supplied by the
+adapter, not necessarily the physical interface bit depth. The common
+`PcmConverter` handles conversion to the chosen encoder format. Non-PCM formats
+and rates/channel counts outside the shared contract are rejected explicitly.
+
+NAudio callback buffers are copied before reuse. A bounded queue (256 packets,
+maximum two seconds of PCM by byte budget) fails explicitly on overruns rather
+than silently dropping data. Capture errors and device invalidation close the
+stream; cancellation/stop unblocks readers, and disposal joins the native
+capture thread on a worker before releasing its endpoint.
+
+If Windows denies microphone access, the app displays the settings path:
+**Settings → Privacy & security → Microphone** (Windows 10:
+**Settings → Privacy → Microphone**). Enable **Microphone access** and
+**Let desktop apps access your microphone**. The adapter checks explicit
+Windows microphone-consent denials as a preflight hint, then treats WASAPI
+access-denied errors as authoritative. Loopback is not blocked by a
+microphone-only denial. Exclusive-device use, stopped Windows Audio service,
+unsupported format and invalidation have separate guidance.
+
+### Windows hardware qualification (not exercised by hosted CI)
+
+Hosted CI runs the adapter with an injected fake native backend: it cannot
+verify USB interfaces or audible glitches. On a Windows station, use the app
+without `--demo-audio` to check an actual mic/interface and playback endpoint.
+For a sustained qualification, feed continuous audio into the input and play
+continuous audio through the loopback endpoint for the entire test.
+
+Set the endpoint IDs (shown in test output; also exposed by `GetDevicesAsync`)
+and run the opt-in test in PowerShell:
+
+```powershell
+$env:TC_TEST_WASAPI = "1"
+$env:TC_WASAPI_INPUT_ID = "<USB interface capture endpoint ID>"
+$env:TC_WASAPI_LOOPBACK_ID = "<player render endpoint ID>"
+$env:TC_WASAPI_DURATION_SECONDS = "1800"
+dotnet test tests/Tropicast.Station.Audio.Windows.Tests -c Release `
+  --filter FullyQualifiedName~WindowsHardwareTests --logger "console;verbosity=detailed"
+```
+
+The test captures each endpoint for 30 minutes (one hour total), requires at
+least 98% of the expected PCM frame count, and fails on malformed packets,
+capture errors or queue overruns. It is a continuity check, **not proof that
+the result is glitch-free**: listen to or analyze an encoded recording during
+station qualification once the encoder is integrated (#8). Publishing a
+broadcast is not available yet.
+
+NAudio.Wasapi/NAudio.Core 2.4.0 are MIT-licensed; package license metadata and
+upstream attribution are available at <https://github.com/naudio/NAudio>.
 
 ## Connection profiles
 

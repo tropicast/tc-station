@@ -1,6 +1,7 @@
 <Solution>
   <Folder Name="/src/">
     <Project Path="src/Tropicast.Station.App/Tropicast.Station.App.csproj" />
+    <Project Path="src/Tropicast.Station.Audio.Windows/Tropicast.Station.Audio.Windows.csproj" />
     <Project Path="src/Tropicast.Station.Audio/Tropicast.Station.Audio.csproj" />
     <Project Path="src/Tropicast.Station.Core/Tropicast.Station.Core.csproj" />
     <Project Path="src/Tropicast.Station.Encoding/Tropicast.Station.Encoding.csproj" />
@@ -9,6 +10,7 @@
   <Folder Name="/tests/">
     <Project Path="tests/Tropicast.Station.App.Tests/Tropicast.Station.App.Tests.csproj" />
     <Project Path="tests/Tropicast.Station.Audio.Tests/Tropicast.Station.Audio.Tests.csproj" />
+    <Project Path="tests/Tropicast.Station.Audio.Windows.Tests/Tropicast.Station.Audio.Windows.Tests.csproj" />
     <Project Path="tests/Tropicast.Station.Core.Tests/Tropicast.Station.Core.Tests.csproj" />
     <Project Path="tests/Tropicast.Station.Infrastructure.Tests/Tropicast.Station.Infrastructure.Tests.csproj" />
   </Folder>
