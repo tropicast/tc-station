@@ -173,7 +173,7 @@ public sealed class ReconnectIntegrationTests
                 }
                 try
                 {
-                    using var response = await http.GetAsync($"http://127.0.0.1:{Port}/", token);
+                    using var response = await http.GetAsync($"http://127.0.0.1:{Port}/status-json.xsl", token);
                     if (response.IsSuccessStatusCode)
                     {
                         return;

@@ -198,7 +198,7 @@ public sealed class BroadcastTests
         Assert.False(model.Audio.CanChoose);
         Assert.False(model.Profiles.CanManage);
         Assert.True(window.FindControl<Button>("RetryNowButton")!.IsVisible);
-        Assert.Contains("Attempt 1", window.FindControl<TextBlock>("ReconnectCountdown")!.Text!, StringComparison.Ordinal);
+        Assert.Matches(@"^Attempt [1-9][0-9]* in [0-9]+ seconds\.$", window.FindControl<TextBlock>("ReconnectCountdown")!.Text!);
         window.UpdateLayout();
         var stop = window.FindControl<Button>("StopBroadcastButton")!;
         var bottom = stop.TranslatePoint(new Point(0, stop.Bounds.Height), window);
