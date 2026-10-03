@@ -3,6 +3,7 @@ using Microsoft.Extensions.Hosting;
 using Tropicast.Station.App.ViewModels;
 using Tropicast.Station.App.Views;
 using Tropicast.Station.Audio;
+using Tropicast.Station.Audio.Windows;
 using Tropicast.Station.Core;
 using Tropicast.Station.Encoding;
 using Tropicast.Station.Infrastructure;
@@ -16,6 +17,10 @@ internal static class AppHost
     {
         var demoAudio = args.Contains("--demo-audio", StringComparer.Ordinal);
         var builder = Host.CreateApplicationBuilder(args.Where(a => a != "--demo-audio").ToArray());
+        if (OperatingSystem.IsWindows() && !demoAudio)
+        {
+            builder.Services.AddWindowsAudioCapture();
+        }
 
         builder.Services
             .AddStationCore()

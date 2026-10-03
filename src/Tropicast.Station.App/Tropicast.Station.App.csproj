@@ -29,6 +29,7 @@
   <ItemGroup>
     <ProjectReference Include="..\Tropicast.Station.Core\Tropicast.Station.Core.csproj" />
     <ProjectReference Include="..\Tropicast.Station.Audio\Tropicast.Station.Audio.csproj" />
+    <ProjectReference Include="..\Tropicast.Station.Audio.Windows\Tropicast.Station.Audio.Windows.csproj" />
     <ProjectReference Include="..\Tropicast.Station.Encoding\Tropicast.Station.Encoding.csproj" />
     <ProjectReference Include="..\Tropicast.Station.Infrastructure\Tropicast.Station.Infrastructure.csproj" />
   </ItemGroup>

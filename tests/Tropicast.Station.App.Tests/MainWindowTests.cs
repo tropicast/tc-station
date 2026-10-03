@@ -5,6 +5,7 @@ using Tropicast.Station.App.ViewModels;
 using Tropicast.Station.App.Views;
 using Tropicast.Station.Core.Profiles;
 using Tropicast.Station.Tests;
+using Tropicast.Station.Audio;
 
 namespace Tropicast.Station.App.Tests;
 
@@ -17,6 +18,7 @@ public sealed class MainWindowTests
         {
             services.AddSingleton<IProfileStore, MemoryProfiles>();
             services.AddSingleton<ISecretStore, MemorySecrets>();
+            services.AddSingleton<IAudioCaptureProvider, ToneAudioCaptureProvider>();
         });
 
         var window = host.Services.GetRequiredService<MainWindow>();
