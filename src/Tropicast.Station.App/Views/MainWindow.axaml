@@ -60,6 +60,8 @@
                   </ComboBox.ItemTemplate>
                 </ComboBox>
                 <TextBlock Text="Create or edit profiles in the Connection profiles tab." TextWrapping="Wrap" />
+                <TextBlock x:Name="SavedStreamSettings" Text="{Binding Broadcast.StreamSettings}" TextWrapping="Wrap"
+                           AutomationProperties.Name="{Binding Broadcast.StreamSettings}" />
                 <TextBlock Text="2. Select an audio source" FontSize="18" />
                 <views:AudioDevicesView x:Name="BroadcastAudioDevices" DataContext="{Binding Audio}" />
               </StackPanel>
@@ -113,6 +115,27 @@
           <TextBlock Text="{Binding TransportWarning}" TextWrapping="Wrap" />
           <TextBlock Text="Content type" />
           <ComboBox ItemsSource="{Binding ContentTypes}" SelectedItem="{Binding ContentType}" AutomationProperties.Name="Content type" />
+          <TextBlock Text="MP3 encoder settings (saved with this profile)" FontWeight="Bold" />
+          <WrapPanel>
+            <TextBlock Text="Bitrate (kbps)" VerticalAlignment="Center" Margin="0,0,8,6" />
+            <ComboBox x:Name="ProfileBitrate" ItemsSource="{Binding Bitrates}" SelectedItem="{Binding BitrateKbps}"
+                      AutomationProperties.Name="Profile bitrate in kbps" Margin="0,0,16,6" />
+            <TextBlock Text="Sample rate (Hz)" VerticalAlignment="Center" Margin="0,0,8,6" />
+            <ComboBox x:Name="ProfileSampleRate" ItemsSource="{Binding SampleRates}" SelectedItem="{Binding SampleRate}"
+                      AutomationProperties.Name="Profile sample rate in Hz" Margin="0,0,16,6" />
+            <TextBlock Text="Channels (1 mono / 2 stereo)" VerticalAlignment="Center" Margin="0,0,8,6" />
+            <ComboBox x:Name="ProfileChannels" ItemsSource="{Binding ChannelCounts}" SelectedItem="{Binding Channels}"
+                      AutomationProperties.Name="Profile channels: 1 mono, 2 stereo" Margin="0,0,16,6" />
+          </WrapPanel>
+          <TextBlock Text="Stream identification (optional, visible to listeners)" FontWeight="Bold" />
+          <TextBox x:Name="StreamNameInput" Text="{Binding StreamName}" MaxLength="128"
+                   PlaceholderText="Stream name" AutomationProperties.Name="Stream name" />
+          <TextBox Text="{Binding StreamDescription}" MaxLength="512"
+                   PlaceholderText="Stream description" AutomationProperties.Name="Stream description" />
+          <TextBox Text="{Binding StreamGenre}" MaxLength="128"
+                   PlaceholderText="Genre" AutomationProperties.Name="Stream genre" />
+          <TextBox Text="{Binding StreamUrl}" MaxLength="512"
+                   PlaceholderText="Website URL (https://...)" AutomationProperties.Name="Stream website URL" />
         </StackPanel>
         <TextBlock Text="{Binding ValidationMessage}" TextWrapping="Wrap" />
         <StackPanel Orientation="Horizontal" Spacing="8">

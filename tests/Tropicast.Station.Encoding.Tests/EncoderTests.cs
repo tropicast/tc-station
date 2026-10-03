@@ -1,4 +1,5 @@
 using System.Diagnostics;
+using System.Buffers.Binary;
 using System.Net;
 using System.Net.Sockets;
 using System.Runtime.InteropServices;
@@ -13,11 +14,22 @@ namespace Tropicast.Station.Encoding.Tests;
 
 public sealed class EncoderTests
 {
+    [Fact]
+    public void New_encoder_options_match_profile_defaults()
+    {
+        var options = new EncoderOptions();
+        var profile = new ConnectionProfile(Guid.NewGuid(), "Defaults", "localhost", 8000, "/default.mp3");
+        Assert.Equal(128, options.BitrateKbps);
+        Assert.Equal(new AudioFormat(44100, 2), options.Format);
+        Assert.Equal(options, EncoderOptions.FromProfile(profile));
+    }
+
     [Theory]
     [InlineData(32000, 2, 128)]
     [InlineData(48000, 3, 128)]
     [InlineData(48000, 2, 31)]
     [InlineData(48000, 2, 321)]
+    [InlineData(48000, 2, 160)]
     public void Invalid_encoder_settings_are_rejected(int rate, int channels, int bitrate)
         => Assert.ThrowsAny<ArgumentException>(() => new EncoderOptions(new(rate, channels), bitrate));
 
@@ -64,6 +76,49 @@ public sealed class EncoderTests
         var profile = new ConnectionProfile(Guid.NewGuid(), "Test", "127.0.0.1", 8000, "/test.mp3", ContentType: "audio/ogg");
         await Assert.ThrowsAsync<ArgumentException>(() => encoder.StartAsync(new(profile, "test-only"),
             cancellationToken: TestContext.Current.CancellationToken));
+    }
+
+    [Theory]
+    [InlineData(64, 44100, 1)]
+    [InlineData(96, 48000, 2)]
+    [InlineData(128, 44100, 2)]
+    [InlineData(192, 48000, 1)]
+    [InlineData(320, 44100, 2)]
+    public async Task Saved_quality_and_metadata_reach_handshake_and_actual_MP3(int bitrate, int rate, int channels)
+    {
+        RequireBundle();
+        await using var server = new FakeIcecast();
+        var profile = server.Target.Profile with
+        {
+            BitrateKbps = bitrate, SampleRate = rate, Channels = channels,
+            StreamName = "Studio radio", StreamDescription = "Local programming",
+            StreamGenre = "Talk", StreamUrl = "https://example.com/studio",
+        };
+        var options = EncoderOptions.FromProfile(profile);
+        Assert.Equal(bitrate, options.BitrateKbps);
+        Assert.Equal(rate, options.Format.SampleRate);
+        Assert.Equal(channels, options.Format.Channels);
+        using var encoder = CreateEncoder();
+        await using var session = await encoder.StartAsync(new(profile, server.Target.Password),
+            cancellationToken: TestContext.Current.CancellationToken);
+        var frame = TonePacket(rate, channels);
+        using var timer = new PeriodicTimer(TimeSpan.FromMilliseconds(20));
+        for (var i = 0; i < 50; i++)
+        {
+            await timer.WaitForNextTickAsync(TestContext.Current.CancellationToken);
+            session.Submit(frame);
+        }
+        await session.StopAsync(TestContext.Current.CancellationToken);
+        await server.Done.WaitAsync(TimeSpan.FromSeconds(5), TestContext.Current.CancellationToken);
+        var header = await server.Header;
+        Assert.Contains($"Ice-Bitrate: {bitrate}\r\n", header, StringComparison.Ordinal);
+        Assert.Contains($"Ice-Audio-Info: bitrate={bitrate};samplerate={rate};channels={channels}\r\n", header, StringComparison.Ordinal);
+        Assert.Contains("Ice-Name: Studio radio\r\n", header, StringComparison.Ordinal);
+        Assert.Contains("Ice-Description: Local programming\r\n", header, StringComparison.Ordinal);
+        Assert.Contains("Ice-Genre: Talk\r\n", header, StringComparison.Ordinal);
+        Assert.Contains("Ice-URL: https://example.com/studio\r\n", header, StringComparison.Ordinal);
+        await AssertDecodableAsync(server.Audio.ToArray(), 0.95, rate, channels);
+        Assert.InRange(server.Audio.Length, bitrate * 1000 / 8 * 0.95, bitrate * 1000 / 8 * 1.2);
     }
 
     [Theory]
@@ -284,14 +339,18 @@ public sealed class EncoderTests
         }
     }
 
-    internal static PcmFrame TonePacket()
+    internal static PcmFrame TonePacket(int rate = 48000, int channels = 2)
     {
-        var samples = new float[960 * 2];
-        for (var i = 0; i < 960; i++)
+        var frames = rate / 50;
+        var samples = new float[frames * channels];
+        for (var i = 0; i < frames; i++)
         {
-            samples[i * 2] = samples[i * 2 + 1] = (float)(0.2 * Math.Sin(2 * Math.PI * 600 * i / 48000));
+            for (var channel = 0; channel < channels; channel++)
+            {
+                samples[i * channels + channel] = (float)(0.2 * Math.Sin(2 * Math.PI * 600 * i / rate));
+            }
         }
-        return new(new(48000, 2), MemoryMarshal.AsBytes(samples.AsSpan()).ToArray());
+        return new(new(rate, channels), MemoryMarshal.AsBytes(samples.AsSpan()).ToArray());
     }
 
     internal static async Task FeedToneAsync(IEncoderSession session, int seconds)
@@ -305,7 +364,7 @@ public sealed class EncoderTests
         }
     }
 
-    internal static async Task AssertDecodableAsync(byte[] mp3, double minimumSeconds)
+    internal static async Task AssertDecodableAsync(byte[] mp3, double minimumSeconds, int sampleRate = 48000, int channels = 2)
     {
         var start = new ProcessStartInfo(new FfmpegExecutable().Path)
         {
@@ -328,11 +387,33 @@ public sealed class EncoderTests
             await read;
             Assert.Equal(0, process.ExitCode);
             Assert.Equal("", await diagnostics);
-            Assert.True(decoded.Length > minimumSeconds * 48000 * 2 * 2);
             var bytes = decoded.ToArray();
             Assert.Equal("RIFF", System.Text.Encoding.ASCII.GetString(bytes, 0, 4));
             Assert.Equal("WAVE", System.Text.Encoding.ASCII.GetString(bytes, 8, 4));
-            Assert.Contains(bytes.AsSpan(100).ToArray(), b => b != 0);
+            var offset = 12;
+            var foundFormat = false;
+            var foundData = false;
+            while (offset + 8 <= bytes.Length)
+            {
+                var size = BinaryPrimitives.ReadUInt32LittleEndian(bytes.AsSpan(offset + 4));
+                var id = System.Text.Encoding.ASCII.GetString(bytes, offset, 4);
+                if (id == "fmt ")
+                {
+                    Assert.Equal(channels, BinaryPrimitives.ReadUInt16LittleEndian(bytes.AsSpan(offset + 10)));
+                    Assert.Equal(sampleRate, (int)BinaryPrimitives.ReadUInt32LittleEndian(bytes.AsSpan(offset + 12)));
+                    foundFormat = true;
+                }
+                if (id == "data")
+                {
+                    Assert.True(bytes.Length - offset - 8 > minimumSeconds * sampleRate * channels * 2);
+                    Assert.Contains(bytes.AsSpan(offset + 8).ToArray(), b => b != 0);
+                    foundData = true;
+                    break;
+                }
+                offset += checked(8 + (int)size + (int)(size % 2));
+            }
+            Assert.True(foundFormat);
+            Assert.True(foundData);
         }
         finally
         {
@@ -359,7 +440,7 @@ internal sealed class FakeIcecast : IAsyncDisposable
     {
         _listener.Start();
         Target = new(new(Guid.NewGuid(), "Test source", "127.0.0.1",
-            ((IPEndPoint)_listener.LocalEndpoint).Port, "/test.mp3"), "unique-test-password");
+            ((IPEndPoint)_listener.LocalEndpoint).Port, "/test.mp3", SampleRate: 48000), "unique-test-password");
         Done = ServeAsync(status, disconnectAfterBytes, finalAcknowledgement);
     }
 

@@ -17,7 +17,7 @@ public sealed class IcecastIntegrationTests
         using var deadline = CancellationTokenSource.CreateLinkedTokenSource(TestContext.Current.CancellationToken);
         deadline.CancelAfter(TimeSpan.FromSeconds(30));
         var target = new BroadcastTarget(new(Guid.NewGuid(), "POC", "127.0.0.1",
-            int.Parse(port, System.Globalization.CultureInfo.InvariantCulture), $"/encode-{Guid.NewGuid():N}.mp3"), "tc-test-source");
+            int.Parse(port, System.Globalization.CultureInfo.InvariantCulture), $"/encode-{Guid.NewGuid():N}.mp3", SampleRate: 48000), "tc-test-source");
         using var encoder = EncoderTests.CreateEncoder();
         await using var session = await encoder.StartAsync(target, cancellationToken: deadline.Token);
         var feed = EncoderTests.FeedToneAsync(session, 8);

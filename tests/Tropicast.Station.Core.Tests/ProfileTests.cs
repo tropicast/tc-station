@@ -6,6 +6,83 @@ namespace Tropicast.Station.Core.Tests;
 
 public sealed class ProfileTests
 {
+    [Fact]
+    public void Stream_defaults_are_128_kbps_44100_hz_stereo_and_optional_metadata()
+    {
+        var profile = TestProfiles.Valid();
+        Assert.Equal(128, profile.BitrateKbps);
+        Assert.Equal(44100, profile.SampleRate);
+        Assert.Equal(2, profile.Channels);
+        Assert.Equal("", profile.StreamName);
+        Assert.Equal("", profile.StreamDescription);
+        Assert.Empty(ProfileValidator.Validate(profile));
+    }
+
+    [Theory]
+    [InlineData(64)]
+    [InlineData(96)]
+    [InlineData(128)]
+    [InlineData(192)]
+    [InlineData(320)]
+    public void Supported_stream_quality_options_are_valid(int bitrate)
+    {
+        foreach (var rate in new[] { 44100, 48000 })
+        {
+            foreach (var channels in new[] { 1, 2 })
+            {
+                Assert.Empty(ProfileValidator.Validate(TestProfiles.Valid() with
+                {
+                    BitrateKbps = bitrate, SampleRate = rate, Channels = channels,
+                    StreamName = "Station", StreamDescription = "Local programming",
+                    StreamGenre = "Talk", StreamUrl = "https://example.com/radio",
+                }));
+            }
+        }
+    }
+
+    [Theory]
+    [InlineData(160, 44100, 2)]
+    [InlineData(128, 32000, 2)]
+    [InlineData(128, 44100, 3)]
+    public void Invalid_quality_is_rejected(int bitrate, int rate, int channels)
+        => Assert.NotEmpty(ProfileValidator.Validate(TestProfiles.Valid() with
+        {
+            BitrateKbps = bitrate, SampleRate = rate, Channels = channels,
+        }));
+
+    [Theory]
+    [InlineData("name\r\nIce-Public: 1")]
+    [InlineData("line\nbreak")]
+    [InlineData("tab\tvalue")]
+    [InlineData("\0")]
+    public void Metadata_control_characters_are_rejected_before_header_generation(string value)
+    {
+        var profile = TestProfiles.Valid();
+        Assert.NotEmpty(ProfileValidator.Validate(profile with { StreamName = value }));
+        Assert.NotEmpty(ProfileValidator.Validate(profile with { StreamDescription = value }));
+        Assert.NotEmpty(ProfileValidator.Validate(profile with { StreamGenre = value }));
+        Assert.NotEmpty(ProfileValidator.Validate(profile with { StreamUrl = value }));
+    }
+
+    [Fact]
+    public void Metadata_lengths_and_nulls_are_validated()
+    {
+        var profile = TestProfiles.Valid();
+        Assert.NotEmpty(ProfileValidator.Validate(profile with { StreamName = new string('n', 129) }));
+        Assert.NotEmpty(ProfileValidator.Validate(profile with { StreamDescription = new string('d', 513) }));
+        Assert.NotEmpty(ProfileValidator.Validate(profile with { StreamGenre = new string('g', 129) }));
+        Assert.NotEmpty(ProfileValidator.Validate(profile with { StreamUrl = null! }));
+        Assert.Empty(ProfileValidator.Validate(profile with { StreamName = new string('n', 128), StreamDescription = new string('d', 512) }));
+    }
+
+    [Theory]
+    [InlineData("javascript:alert(1)")]
+    [InlineData("ftp://example.com")]
+    [InlineData("example.com")]
+    [InlineData("https://user:password@example.com")]
+    public void Invalid_metadata_urls_are_rejected(string url)
+        => Assert.NotEmpty(ProfileValidator.Validate(TestProfiles.Valid() with { StreamUrl = url }));
+
     [Theory]
     [InlineData("localhost")]
     [InlineData("radio.example.com")]

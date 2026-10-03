@@ -17,10 +17,14 @@ public sealed partial class ProfileEditorViewModel(
     private static readonly HashSet<string> InputProperties =
     [
         nameof(Name), nameof(Host), nameof(Port), nameof(Mount), nameof(Username), nameof(UseTls), nameof(ContentType), nameof(Password),
+        nameof(BitrateKbps), nameof(SampleRate), nameof(Channels), nameof(StreamName), nameof(StreamDescription), nameof(StreamGenre), nameof(StreamUrl),
     ];
 
     public ObservableCollection<ConnectionProfile> Profiles { get; } = [];
     public IReadOnlyList<string> ContentTypes { get; } = ["audio/mpeg", "audio/aac", "audio/ogg"];
+    public IReadOnlyList<int> Bitrates { get; } = [64, 96, 128, 192, 320];
+    public IReadOnlyList<int> SampleRates { get; } = [44100, 48000];
+    public IReadOnlyList<int> ChannelCounts { get; } = [1, 2];
 
     [ObservableProperty] public partial ConnectionProfile? SelectedProfile { get; set; }
     [ObservableProperty] public partial string Name { get; set; } = "";
@@ -31,6 +35,13 @@ public sealed partial class ProfileEditorViewModel(
     [ObservableProperty] public partial bool UseTls { get; set; }
     [ObservableProperty] public partial string ContentType { get; set; } = "audio/mpeg";
     [ObservableProperty] public partial string Password { get; set; } = "";
+    [ObservableProperty] public partial int BitrateKbps { get; set; } = 128;
+    [ObservableProperty] public partial int SampleRate { get; set; } = 44100;
+    [ObservableProperty] public partial int Channels { get; set; } = 2;
+    [ObservableProperty] public partial string StreamName { get; set; } = "";
+    [ObservableProperty] public partial string StreamDescription { get; set; } = "";
+    [ObservableProperty] public partial string StreamGenre { get; set; } = "";
+    [ObservableProperty] public partial string StreamUrl { get; set; } = "";
     [ObservableProperty] public partial string ValidationMessage { get; set; } = "Enter a profile name and source password.";
     [ObservableProperty] public partial string Status { get; set; } = "";
     [ObservableProperty] public partial bool IsBusy { get; set; }
@@ -65,7 +76,8 @@ public sealed partial class ProfileEditorViewModel(
 
     private ConnectionProfile Draft() => new(_id, Name.Trim(), Host.Trim().Trim('[', ']'),
         int.TryParse(Port, NumberStyles.None, CultureInfo.InvariantCulture, out var port) ? port : 0,
-        Mount.Trim(), Username.Trim(), UseTls, ContentType);
+        Mount.Trim(), Username.Trim(), UseTls, ContentType, BitrateKbps, SampleRate, Channels,
+        StreamName.Trim(), StreamDescription.Trim(), StreamGenre.Trim(), StreamUrl.Trim());
 
     private void Validate()
     {
@@ -103,6 +115,13 @@ public sealed partial class ProfileEditorViewModel(
         Username = "source";
         UseTls = false;
         ContentType = "audio/mpeg";
+        BitrateKbps = 128;
+        SampleRate = 44100;
+        Channels = 2;
+        StreamName = "";
+        StreamDescription = "";
+        StreamGenre = "";
+        StreamUrl = "";
         Password = "";
         Status = "New profile.";
         OnPropertyChanged(nameof(PasswordHint));
@@ -123,6 +142,13 @@ public sealed partial class ProfileEditorViewModel(
         Username = profile.Username;
         UseTls = profile.UseTls;
         ContentType = profile.ContentType;
+        BitrateKbps = profile.BitrateKbps;
+        SampleRate = profile.SampleRate;
+        Channels = profile.Channels;
+        StreamName = profile.StreamName;
+        StreamDescription = profile.StreamDescription;
+        StreamGenre = profile.StreamGenre;
+        StreamUrl = profile.StreamUrl;
         Password = "";
         Status = "Editing saved profile.";
         OnPropertyChanged(nameof(PasswordHint));

@@ -83,7 +83,12 @@ public sealed class ConnectionTesterTests
             }
             return header.ToString();
         }, deadline.Token);
-        var profile = TestProfiles.Valid() with { Host = "127.0.0.1", Port = port };
+        var profile = TestProfiles.Valid() with
+        {
+            Host = "127.0.0.1", Port = port, BitrateKbps = 192, SampleRate = 48000, Channels = 1,
+            StreamName = "Station", StreamDescription = "Local programming", StreamGenre = "Talk",
+            StreamUrl = "https://example.com/radio",
+        };
         var result = await new IcecastConnectionTester().TestAsync(new(profile, "secret"), deadline.Token);
         Assert.Equal(expected, result.Status);
         Assert.DoesNotContain("secret", result.Message);
@@ -91,6 +96,12 @@ public sealed class ConnectionTesterTests
         Assert.StartsWith("PUT /live.mp3 HTTP/1.1\r\n", header, StringComparison.Ordinal);
         Assert.Contains("Expect: 100-continue", header, StringComparison.Ordinal);
         Assert.Contains("Authorization: Basic " + Convert.ToBase64String(Encoding.UTF8.GetBytes("source:secret")), header, StringComparison.Ordinal);
+        Assert.Contains("Ice-Name: Station\r\n", header, StringComparison.Ordinal);
+        Assert.Contains("Ice-Description: Local programming\r\n", header, StringComparison.Ordinal);
+        Assert.Contains("Ice-Genre: Talk\r\n", header, StringComparison.Ordinal);
+        Assert.Contains("Ice-URL: https://example.com/radio\r\n", header, StringComparison.Ordinal);
+        Assert.Contains("Ice-Bitrate: 192\r\n", header, StringComparison.Ordinal);
+        Assert.Contains("Ice-Audio-Info: bitrate=192;samplerate=48000;channels=1\r\n", header, StringComparison.Ordinal);
     }
 
     [Fact]

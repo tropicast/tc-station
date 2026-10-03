@@ -26,7 +26,7 @@ public sealed partial class FfmpegBroadcastEncoder : IBroadcastEncoder, IDisposa
         {
             throw new ArgumentException("The MP3 encoder requires an audio/mpeg connection profile.", nameof(target));
         }
-        options ??= new();
+        options ??= EncoderOptions.FromProfile(target.Profile);
         using var linked = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken, _shutdown.Token);
         await _gate.WaitAsync(linked.Token).ConfigureAwait(false);
         try
@@ -41,7 +41,11 @@ public sealed partial class FfmpegBroadcastEncoder : IBroadcastEncoder, IDisposa
                 await ReleaseAsync(_active).ConfigureAwait(false);
                 _active = null;
             }
-            var connection = await IcecastSourceConnection.ConnectAsync(target, linked.Token).ConfigureAwait(false);
+            var effectiveTarget = new BroadcastTarget(target.Profile with
+            {
+                BitrateKbps = options.BitrateKbps, SampleRate = options.Format.SampleRate, Channels = options.Format.Channels,
+            }, target.Password);
+            var connection = await IcecastSourceConnection.ConnectAsync(effectiveTarget, linked.Token).ConfigureAwait(false);
             try
             {
                 linked.Token.ThrowIfCancellationRequested();

@@ -3,6 +3,7 @@ using System.Globalization;
 using System.Net;
 using System.Net.Sockets;
 using System.Xml.Linq;
+using System.Text.Json;
 using Microsoft.Extensions.Logging.Abstractions;
 using Tropicast.Station.Audio;
 using Tropicast.Station.Core.Broadcasting;
@@ -12,6 +13,62 @@ namespace Tropicast.Station.Encoding.Tests;
 
 public sealed class ReconnectIntegrationTests
 {
+    private static readonly string[] MetadataFields = ["server_name", "server_description", "genre", "server_url", "bitrate"];
+    [Fact]
+    public async Task Real_Icecast_status_exposes_saved_name_description_genre_url_and_bitrate()
+    {
+        if (Environment.GetEnvironmentVariable("TC_TEST_ICECAST_EXECUTABLE") is null
+            && Environment.GetEnvironmentVariable("TC_TEST_ICECAST_DOCKER_IMAGE") is null)
+        {
+            Assert.Skip("Set TC_TEST_ICECAST_EXECUTABLE or TC_TEST_ICECAST_DOCKER_IMAGE for isolated metadata verification.");
+            return;
+        }
+        EncoderTests.RequireBundle();
+        using var deadline = CancellationTokenSource.CreateLinkedTokenSource(TestContext.Current.CancellationToken);
+        deadline.CancelAfter(TimeSpan.FromSeconds(30));
+        await using var server = new RestartServer();
+        await server.CreateAsync(deadline.Token);
+        var profile = new ConnectionProfile(Guid.NewGuid(), "Metadata POC", "127.0.0.1", server.Port, "/metadata.mp3",
+            BitrateKbps: 192, SampleRate: 48000, Channels: 1,
+            StreamName: "Tropicast radio", StreamDescription: "Local independent programming",
+            StreamGenre: "Talk", StreamUrl: "https://example.com/station");
+        await using var capture = new AudioCaptureService(new ToneAudioCaptureProvider(), NullLogger<AudioCaptureService>.Instance);
+        using var encoder = EncoderTests.CreateEncoder();
+        using var controller = new BroadcastController(capture, new Target(new(profile, "tc-test-source")),
+            encoder, NullLogger<BroadcastController>.Instance);
+        await controller.StartAsync(profile.Id, "demo-input", cancellationToken: deadline.Token);
+        await UntilLiveAsync(controller, deadline.Token);
+        using var http = new HttpClient();
+        var source = await ReadSourceStatusAsync(http, server.Port, deadline.Token);
+        Assert.Equal(profile.StreamName, source.GetProperty("server_name").GetString());
+        Assert.Equal(profile.StreamDescription, source.GetProperty("server_description").GetString());
+        Assert.Equal(profile.StreamGenre, source.GetProperty("genre").GetString());
+        Assert.Equal(profile.StreamUrl, source.GetProperty("server_url").GetString());
+        Assert.Equal(profile.BitrateKbps.ToString(CultureInfo.InvariantCulture), source.GetProperty("bitrate").ToString());
+        await ReadListenerAsync(profile, deadline.Token);
+        await controller.StopAsync(deadline.Token);
+    }
+
+    private static async Task<JsonElement> ReadSourceStatusAsync(HttpClient http, int port, CancellationToken token)
+    {
+        // Icecast stats are published asynchronously, after the source begins sending audio.
+        for (var attempt = 0; attempt < 100; attempt++)
+        {
+            using var response = await http.GetAsync($"http://127.0.0.1:{port}/status-json.xsl", token);
+            response.EnsureSuccessStatusCode();
+            await using var body = await response.Content.ReadAsStreamAsync(token);
+            using var status = await JsonDocument.ParseAsync(body, cancellationToken: token);
+            if (status.RootElement.GetProperty("icestats").TryGetProperty("source", out var source)
+                && source.ValueKind == JsonValueKind.Object
+                && MetadataFields.All(field => source.TryGetProperty(field, out _)))
+            {
+                return source.Clone();
+            }
+            await Task.Delay(100, token);
+        }
+        throw new IOException("Icecast status did not publish all configured metadata fields within 10 seconds.");
+    }
+
     [Fact]
     public async Task Real_Icecast_restart_recovers_without_user_action_and_bad_credentials_stop_retrying()
     {
@@ -84,13 +141,13 @@ public sealed class ReconnectIntegrationTests
         await using var listener = await response.Content.ReadAsStreamAsync(token);
         using var captured = new MemoryStream();
         var buffer = new byte[8192];
-        while (captured.Length < 32000)
+        while (captured.Length < profile.BitrateKbps * 1000 / 8 * 2)
         {
             var count = await listener.ReadAsync(buffer, token);
             Assert.True(count > 0);
             captured.Write(buffer, 0, count);
         }
-        await EncoderTests.AssertDecodableAsync(captured.ToArray(), 1.8);
+        await EncoderTests.AssertDecodableAsync(captured.ToArray(), 1.8, profile.SampleRate, profile.Channels);
     }
 
     private sealed class Target(BroadcastTarget target) : IBroadcastTargetProvider

@@ -59,6 +59,7 @@ public sealed class IcecastSourceConnection : IAsyncDisposable
             var credentials = Convert.ToBase64String(Encoding.UTF8.GetBytes($"{target.Profile.Username}:{target.Password}"));
             var request = $"PUT {target.Profile.Mount} HTTP/1.1\r\nHost: {target.Profile.Endpoint.Authority}\r\n"
                 + $"Authorization: Basic {credentials}\r\nContent-Type: {target.Profile.ContentType}\r\n"
+                + StreamHeaders(target.Profile)
                 + "Expect: 100-continue\r\nIce-Public: 0\r\nConnection: close\r\n\r\n";
             await stream.WriteAsync(Encoding.UTF8.GetBytes(request), deadline.Token).ConfigureAwait(false);
             var response = await ReadResponseAsync(stream, deadline.Token).ConfigureAwait(false);
@@ -98,6 +99,31 @@ public sealed class IcecastSourceConnection : IAsyncDisposable
                 client.Dispose();
             }
         }
+    }
+
+    private static string StreamHeaders(ConnectionProfile profile)
+    {
+        var headers = new StringBuilder();
+        if (profile.StreamName.Length > 0)
+        {
+            headers.Append("Ice-Name: ").Append(profile.StreamName).Append("\r\n");
+        }
+        if (profile.StreamDescription.Length > 0)
+        {
+            headers.Append("Ice-Description: ").Append(profile.StreamDescription).Append("\r\n");
+        }
+        if (profile.StreamGenre.Length > 0)
+        {
+            headers.Append("Ice-Genre: ").Append(profile.StreamGenre).Append("\r\n");
+        }
+        if (profile.StreamUrl.Length > 0)
+        {
+            headers.Append("Ice-URL: ").Append(profile.StreamUrl).Append("\r\n");
+        }
+        headers.Append(CultureInfo.InvariantCulture, $"Ice-Bitrate: {profile.BitrateKbps}\r\n");
+        headers.Append(CultureInfo.InvariantCulture,
+            $"Ice-Audio-Info: bitrate={profile.BitrateKbps};samplerate={profile.SampleRate};channels={profile.Channels}\r\n");
+        return headers.ToString();
     }
 
     public async Task MonitorAsync(CancellationToken cancellationToken = default)

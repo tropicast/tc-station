@@ -22,10 +22,10 @@
       </ComboBox.ItemTemplate>
     </ComboBox>
     <WrapPanel IsEnabled="{Binding CanChoose}">
-      <TextBlock Text="Encoder sample rate" VerticalAlignment="Center" Margin="0,0,10,6" />
-      <ComboBox ItemsSource="{Binding SampleRates}" SelectedItem="{Binding SampleRate}" Margin="0,0,10,6" AutomationProperties.Name="Encoder sample rate" />
+      <TextBlock Text="Preview sample rate" VerticalAlignment="Center" Margin="0,0,10,6" />
+      <ComboBox ItemsSource="{Binding SampleRates}" SelectedItem="{Binding SampleRate}" Margin="0,0,10,6" AutomationProperties.Name="Preview sample rate" />
       <TextBlock Text="Channels" VerticalAlignment="Center" Margin="0,0,10,6" />
-      <ComboBox ItemsSource="{Binding ChannelCounts}" SelectedItem="{Binding Channels}" Margin="0,0,10,6" AutomationProperties.Name="Encoder channels" />
+      <ComboBox ItemsSource="{Binding ChannelCounts}" SelectedItem="{Binding Channels}" Margin="0,0,10,6" AutomationProperties.Name="Preview channels" />
     </WrapPanel>
     <WrapPanel>
       <Button Content="Refresh devices" Command="{Binding RefreshCommand}" Margin="0,0,10,6" />
@@ -34,5 +34,6 @@
     </WrapPanel>
     <TextBlock Text="{Binding Status}" TextWrapping="Wrap" />
     <TextBlock Text="Preview captures and converts PCM only. It does not play or broadcast audio." TextWrapping="Wrap" Opacity="0.7" />
+    <TextBlock Text="Go Live uses the saved profile's quality settings, not these preview settings." TextWrapping="Wrap" Opacity="0.7" />
   </StackPanel>
 </UserControl>
