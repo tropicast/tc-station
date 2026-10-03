@@ -13,6 +13,7 @@ public partial class MainWindow : Window
         if (DataContext is MainViewModel model)
         {
             model.Profiles.LoadCommand.Execute(null);
+            model.Audio.RefreshCommand.Execute(null);
         }
     }
 
@@ -22,6 +23,10 @@ public partial class MainWindow : Window
         {
             model.Profiles.TestCommand.Cancel();
             model.Profiles.Password = "";
+            if (model.Audio.StopCommand.CanExecute(null))
+            {
+                model.Audio.StopCommand.Execute(null);
+            }
         }
 
         base.OnClosed(e);

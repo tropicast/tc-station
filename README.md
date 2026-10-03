@@ -5,8 +5,9 @@ Cross-platform desktop broadcaster for Tropicast radio stations, built with
 (microphone, mixer or application output), encodes it and streams it live to
 an Icecast mount.
 
-> Status: desktop scaffold and manual connection profiles (issues #2 and #3).
-> Audio capture and Go Live controls are tracked in the MVP epic, #1.
+> Status: desktop scaffold, manual connection profiles, and shared audio
+> capture/device-picker pipeline (issues #2–#4). Native adapters (#5–#7),
+> encoding, meters and Go Live controls remain in the MVP epic, #1.
 
 ## Prerequisites
 
@@ -38,9 +39,64 @@ Developer Tools (F12).
 | `src/Tropicast.Station.Infrastructure` | JSON profiles, OS credential stores and Icecast connection testing |
 | `tests/Tropicast.Station.Core.Tests` | Unit tests for the class libraries |
 | `tests/Tropicast.Station.App.Tests` | Headless Avalonia UI tests |
+| `tests/Tropicast.Station.Audio.Tests` | PCM conversion, synthetic capture and hot-plug lifecycle tests |
 | `tests/Tropicast.Station.Infrastructure.Tests` | Persistence, source handshake and native credential-store tests |
 
 Dependencies point inward: `App` → `Audio` / `Encoding` / `Infrastructure` → `Core`.
+
+## Audio sources and preview
+
+The **Audio source** tab groups available devices into **Microphones / inputs**
+and **Application / system output**. Choose one device, the encoder sample rate
+(44.1 or 48 kHz) and mono/stereo, then **Start preview**. This consumes captured
+PCM through the shared conversion pipeline; it does not play audio, encode it,
+or publish to Icecast. Levels and broadcasting controls are separate MVP issues.
+
+Native capture adapters are not installed yet. The normal app explicitly says
+so and lists no hardware devices. Run the synthetic adapter for demos:
+
+```bash
+dotnet run --project src/Tropicast.Station.App -- --demo-audio
+```
+
+Demo mode supplies a 440 Hz, 44.1 kHz mono signed-16 input and a 660 Hz, 48 kHz
+stereo float32 loopback source, both clearly labelled **Demo**. These are generated
+tones, not recordings of microphones or application audio.
+
+### Adapter contract and pipeline
+
+`IAudioCaptureProvider` exposes enumeration, `DevicesChanged` notifications and
+`StartAsync`. An `AudioDevice` carries a stable ID, display name, kind, default
+flag and native `AudioFormat`. `IAudioCaptureSession` delivers interleaved
+little-endian signed16 or float32 PCM through a single-consumer async stream.
+Each `PcmFrame` owns its buffer; adapters must not reuse that memory. Stop,
+disposal and reader cancellation must unblock capture and be safe to call
+concurrently/repeatedly. Bounded native queues must report overruns, not silently
+discard audio. Device loss throws `IOException`.
+
+`AudioCaptureService` serializes lifecycle/device refreshes, cancels and disposes
+capture on removal or native-format changes, and emits a visible error without
+switching to another device. Idle hot-plug/default-device changes refresh the
+picker automatically. The selected device is preserved by ID on renames.
+Adapters for WASAPI, PipeWire/PulseAudio and Core Audio will replace the default
+provider via DI; use `TryAdd` registration so an explicitly registered adapter
+is not overwritten.
+
+`PcmConverter` produces float32 mono/stereo PCM for the future encoder using
+a streaming windowed-sinc low-pass resampler with 32 input-frame lookahead
+(about 0.73 ms at 44.1 kHz). Mono is duplicated to stereo; stereo is averaged
+to mono. With more channels, mono averages all channels and stereo averages
+alternating channel indices. This is deliberately **not** a speaker-layout-aware
+surround downmix. No gain/limiting is applied. Conversion state carries across
+chunks; `Flush()` drains a finite source, while device-loss/stop discards the
+tail. Invalid PCM alignment, non-finite float samples or midstream format
+changes produce explicit errors.
+
+`AudioCaptureService.FrameAvailable` is the future encoder integration point:
+frames are already in the requested format. Subscribers run on the capture
+thread and must neither block nor throw. Marshal UI work to the UI dispatcher;
+keep any encoder handoff bounded and report overloads. `ToneAudioCaptureProvider`
+also exposes `SetDevices` for deterministic hot-plug tests and demos.
 
 ## Connection profiles
 

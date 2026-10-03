@@ -2,6 +2,7 @@
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         xmlns:vm="using:Tropicast.Station.App.ViewModels"
         xmlns:profiles="using:Tropicast.Station.Core.Profiles"
+        xmlns:views="using:Tropicast.Station.App.Views"
         x:Class="Tropicast.Station.App.Views.MainWindow"
         x:DataType="vm:MainViewModel"
         Icon="/Assets/tropicast.ico"
@@ -16,7 +17,14 @@
       <TextBlock Text="{Binding Title}" FontSize="24" VerticalAlignment="Center" />
       <TextBlock x:Name="VersionText" Text="{Binding Version}" VerticalAlignment="Center" />
     </StackPanel>
-    <ScrollViewer>
+    <TabControl>
+      <TabItem Header="Audio source">
+        <ScrollViewer>
+          <views:AudioDevicesView x:Name="AudioDevices" DataContext="{Binding Audio}" />
+        </ScrollViewer>
+      </TabItem>
+      <TabItem Header="Connection profiles">
+      <ScrollViewer>
       <StackPanel DataContext="{Binding Profiles}" x:DataType="vm:ProfileEditorViewModel" Spacing="10">
         <TextBlock Text="Connection profiles" FontSize="20" />
         <StackPanel Orientation="Horizontal" Spacing="8">
@@ -60,6 +68,8 @@
         <TextBlock Text="{Binding Status}" TextWrapping="Wrap" />
         <TextBlock Text="Test briefly connects as a source and releases the mount. It does not send audio." TextWrapping="Wrap" Opacity="0.7" />
       </StackPanel>
-    </ScrollViewer>
+      </ScrollViewer>
+      </TabItem>
+    </TabControl>
   </DockPanel>
 </Window>
