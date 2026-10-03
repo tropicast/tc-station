@@ -3,6 +3,7 @@ using Microsoft.Extensions.Hosting;
 using Tropicast.Station.App.ViewModels;
 using Tropicast.Station.App.Views;
 using Tropicast.Station.Audio;
+using Tropicast.Station.Audio.Linux;
 using Tropicast.Station.Audio.Windows;
 using Tropicast.Station.Core;
 using Tropicast.Station.Encoding;
@@ -20,6 +21,10 @@ internal static class AppHost
         if (OperatingSystem.IsWindows() && !demoAudio)
         {
             builder.Services.AddWindowsAudioCapture();
+        }
+        else if (OperatingSystem.IsLinux() && !demoAudio)
+        {
+            builder.Services.AddLinuxAudioCapture();
         }
 
         builder.Services
