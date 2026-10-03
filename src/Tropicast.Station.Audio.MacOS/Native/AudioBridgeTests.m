@@ -19,6 +19,17 @@ int main(void) {
         assert(!TCInputChannels(&list, sizeof(list), &channels));
         list.mNumberBuffers = UINT32_MAX;
         assert(!TCInputChannels(&list, sizeof(list), &channels));
+        int error = 0;
+        char *json = tc_audio_list(&error);
+        assert(json && error == 0);
+        NSData *data = [[NSString stringWithUTF8String:json] dataUsingEncoding:NSUTF8StringEncoding];
+        NSArray *devices = [NSJSONSerialization JSONObjectWithData:data options:0 error:nil];
+        assert(devices);
+        for (NSDictionary *device in devices) {
+            assert(CFGetTypeID((__bridge CFTypeRef)device[@"default"]) == CFBooleanGetTypeID());
+            assert(CFGetTypeID((__bridge CFTypeRef)device[@"loopback"]) == CFBooleanGetTypeID());
+        }
+        tc_audio_free(json);
         puts("Native Core Audio buffer-layout checks passed.");
     }
     return 0;

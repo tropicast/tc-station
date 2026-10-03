@@ -30,6 +30,7 @@ public sealed class MacDeviceTests
     [InlineData("not json")]
     [InlineData("""[{"id":null}]""")]
     [InlineData("""[{"id":"a","name":"A","rate":48000,"channels":9,"default":true,"loopback":false}]""")]
+    [InlineData("""[{"id":"a","name":"A","rate":48000,"channels":2,"default":1,"loopback":false}]""")]
     public void Malformed_data_is_an_error_not_empty_devices(string json)
         => Assert.Throws<IOException>(() => CoreAudioBackend.ParseDevices(json));
 

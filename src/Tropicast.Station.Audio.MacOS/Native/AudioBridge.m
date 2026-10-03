@@ -118,7 +118,7 @@ char *tc_audio_list(int *error) {
                 return NULL;
             }
             [result addObject:@{@"id":uid, @"name":name, @"rate":@((int)rate),
-                @"channels":@(channels), @"default":@(device == defaultInput), @"loopback":@NO}];
+                @"channels":@(channels), @"default":device == defaultInput ? @YES : @NO, @"loopback":@NO}];
         }
         if (@available(macOS 13.0, *)) {
             [result addObject:@{@"id":@"tropicast:system-audio", @"name":@"System audio (ScreenCaptureKit)",
