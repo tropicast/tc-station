@@ -14,16 +14,18 @@ internal static class AppHost
 {
     public static IHost Create(string[] args, Action<IServiceCollection>? configureServices = null)
     {
-        var builder = Host.CreateApplicationBuilder(args);
+        var demoAudio = args.Contains("--demo-audio", StringComparer.Ordinal);
+        var builder = Host.CreateApplicationBuilder(args.Where(a => a != "--demo-audio").ToArray());
 
         builder.Services
             .AddStationCore()
-            .AddStationAudio()
+            .AddStationAudio(demoAudio)
             .AddStationEncoding()
             .AddStationInfrastructure();
 
         builder.Services.AddSingleton<MainViewModel>();
         builder.Services.AddSingleton<ProfileEditorViewModel>();
+        builder.Services.AddSingleton<AudioDevicesViewModel>();
         builder.Services.AddTransient(sp => new MainWindow
         {
             DataContext = sp.GetRequiredService<MainViewModel>(),

@@ -17,6 +17,7 @@ public sealed class ServiceRegistrationTests
             .AddStationEncoding();
         services.AddSingleton<IProfileStore, MemoryProfiles>();
         services.AddSingleton<ISecretStore, MemorySecrets>();
+        services.AddLogging();
 
         using var provider = services.BuildServiceProvider(new ServiceProviderOptions
         {

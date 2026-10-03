@@ -1,0 +1,38 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:vm="using:Tropicast.Station.App.ViewModels"
+             xmlns:audio="using:Tropicast.Station.Audio"
+             x:Class="Tropicast.Station.App.Views.AudioDevicesView"
+             x:DataType="vm:AudioDevicesViewModel">
+  <StackPanel Spacing="10">
+    <TextBlock Text="Audio source" FontSize="20" />
+    <TextBlock Text="{Binding ProviderDescription}" TextWrapping="Wrap" />
+    <TextBlock Text="Microphones / inputs" />
+    <ComboBox x:Name="InputPicker" ItemsSource="{Binding Inputs}" SelectedItem="{Binding SelectedInput}"
+              IsEnabled="{Binding CanChoose}" HorizontalAlignment="Stretch" AutomationProperties.Name="Microphones and inputs">
+      <ComboBox.ItemTemplate>
+        <DataTemplate x:DataType="audio:AudioDevice"><TextBlock Text="{Binding Label}" /></DataTemplate>
+      </ComboBox.ItemTemplate>
+    </ComboBox>
+    <TextBlock Text="Application / system output" />
+    <ComboBox x:Name="OutputPicker" ItemsSource="{Binding Outputs}" SelectedItem="{Binding SelectedOutput}"
+              IsEnabled="{Binding CanChoose}" HorizontalAlignment="Stretch" AutomationProperties.Name="Application and system output">
+      <ComboBox.ItemTemplate>
+        <DataTemplate x:DataType="audio:AudioDevice"><TextBlock Text="{Binding Label}" /></DataTemplate>
+      </ComboBox.ItemTemplate>
+    </ComboBox>
+    <StackPanel Orientation="Horizontal" Spacing="10" IsEnabled="{Binding CanChoose}">
+      <TextBlock Text="Encoder sample rate" VerticalAlignment="Center" />
+      <ComboBox ItemsSource="{Binding SampleRates}" SelectedItem="{Binding SampleRate}" AutomationProperties.Name="Encoder sample rate" />
+      <TextBlock Text="Channels" VerticalAlignment="Center" />
+      <ComboBox ItemsSource="{Binding ChannelCounts}" SelectedItem="{Binding Channels}" AutomationProperties.Name="Encoder channels" />
+    </StackPanel>
+    <StackPanel Orientation="Horizontal" Spacing="10">
+      <Button Content="Refresh devices" Command="{Binding RefreshCommand}" />
+      <Button Content="Start preview" Command="{Binding StartCommand}" />
+      <Button Content="Stop preview" Command="{Binding StopCommand}" />
+    </StackPanel>
+    <TextBlock Text="{Binding Status}" TextWrapping="Wrap" />
+    <TextBlock Text="Preview captures and converts PCM only. It does not play or broadcast audio." TextWrapping="Wrap" Opacity="0.7" />
+  </StackPanel>
+</UserControl>
