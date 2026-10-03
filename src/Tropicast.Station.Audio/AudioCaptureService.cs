@@ -44,6 +44,7 @@ public sealed partial class AudioCaptureService : IAsyncDisposable, IDisposable
 
     public AudioCaptureSnapshot Snapshot => Volatile.Read(ref _snapshot);
     public string ProviderDescription => _provider.Description;
+    public AudioLevelMeter Levels { get; } = new();
     public event EventHandler<AudioSnapshotEventArgs>? Changed;
     public event EventHandler<PcmFrameEventArgs>? FrameAvailable;
 
@@ -111,6 +112,7 @@ public sealed partial class AudioCaptureService : IAsyncDisposable, IDisposable
             var converter = new PcmConverter(selected.NativeFormat, targetFormat ?? AudioFormat.EncoderDefault);
             _session = await _provider.StartAsync(deviceId, cancellationToken).ConfigureAwait(false);
             _captureCancellation = new CancellationTokenSource();
+            Levels.Start(targetFormat ?? AudioFormat.EncoderDefault);
             Publish(new(devices.ToArray(), deviceId, true, $"Capturing {selected.DisplayName} (preview only; not broadcasting)."));
             _captureTask = ReadAsync(_session, converter, _captureCancellation.Token);
         }
@@ -150,6 +152,7 @@ public sealed partial class AudioCaptureService : IAsyncDisposable, IDisposable
             {
                 if (converter.Convert(frame) is { } normalized)
                 {
+                    Levels.Process(normalized);
                     FrameAvailable?.Invoke(this, new(normalized));
                 }
             }
@@ -166,6 +169,7 @@ public sealed partial class AudioCaptureService : IAsyncDisposable, IDisposable
         }
         finally
         {
+            Levels.Stop();
             try
             {
                 await session.DisposeAsync().ConfigureAwait(false);
@@ -179,6 +183,7 @@ public sealed partial class AudioCaptureService : IAsyncDisposable, IDisposable
 
     private async Task<bool> StopCoreAsync()
     {
+        Levels.Stop();
         if (_session is null)
         {
             return true;

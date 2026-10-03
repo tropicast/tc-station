@@ -21,17 +21,17 @@
         <DataTemplate x:DataType="audio:AudioDevice"><TextBlock Text="{Binding Label}" /></DataTemplate>
       </ComboBox.ItemTemplate>
     </ComboBox>
-    <StackPanel Orientation="Horizontal" Spacing="10" IsEnabled="{Binding CanChoose}">
-      <TextBlock Text="Encoder sample rate" VerticalAlignment="Center" />
-      <ComboBox ItemsSource="{Binding SampleRates}" SelectedItem="{Binding SampleRate}" AutomationProperties.Name="Encoder sample rate" />
-      <TextBlock Text="Channels" VerticalAlignment="Center" />
-      <ComboBox ItemsSource="{Binding ChannelCounts}" SelectedItem="{Binding Channels}" AutomationProperties.Name="Encoder channels" />
-    </StackPanel>
-    <StackPanel Orientation="Horizontal" Spacing="10">
-      <Button Content="Refresh devices" Command="{Binding RefreshCommand}" />
-      <Button Content="Start preview" Command="{Binding StartCommand}" />
-      <Button Content="Stop preview" Command="{Binding StopCommand}" />
-    </StackPanel>
+    <WrapPanel IsEnabled="{Binding CanChoose}">
+      <TextBlock Text="Encoder sample rate" VerticalAlignment="Center" Margin="0,0,10,6" />
+      <ComboBox ItemsSource="{Binding SampleRates}" SelectedItem="{Binding SampleRate}" Margin="0,0,10,6" AutomationProperties.Name="Encoder sample rate" />
+      <TextBlock Text="Channels" VerticalAlignment="Center" Margin="0,0,10,6" />
+      <ComboBox ItemsSource="{Binding ChannelCounts}" SelectedItem="{Binding Channels}" Margin="0,0,10,6" AutomationProperties.Name="Encoder channels" />
+    </WrapPanel>
+    <WrapPanel>
+      <Button Content="Refresh devices" Command="{Binding RefreshCommand}" Margin="0,0,10,6" />
+      <Button Content="Start preview" Command="{Binding StartCommand}" Margin="0,0,10,6" />
+      <Button Content="Stop preview" Command="{Binding StopCommand}" Margin="0,0,10,6" />
+    </WrapPanel>
     <TextBlock Text="{Binding Status}" TextWrapping="Wrap" />
     <TextBlock Text="Preview captures and converts PCM only. It does not play or broadcast audio." TextWrapping="Wrap" Opacity="0.7" />
   </StackPanel>

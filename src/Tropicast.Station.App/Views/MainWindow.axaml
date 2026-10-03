@@ -41,26 +41,34 @@
               <TextBlock x:Name="BroadcastStatus" Text="{Binding Status}" TextWrapping="Wrap"
                          AutomationProperties.Name="{Binding Status}" />
             </StackPanel>
-          <ScrollViewer>
-          <StackPanel Spacing="16">
-            <TextBlock Text="1. Select a saved connection profile" FontSize="18" />
-            <ComboBox x:Name="BroadcastProfilePicker" ItemsSource="{Binding Profiles.Profiles}"
-                      SelectedItem="{Binding Profiles.SelectedProfile}" IsEnabled="{Binding Profiles.CanManage}"
-                      HorizontalAlignment="Stretch" AutomationProperties.Name="Broadcast connection profile">
-              <ComboBox.ItemTemplate>
-                <DataTemplate x:DataType="profiles:ConnectionProfile"><TextBlock Text="{Binding Name}" /></DataTemplate>
-              </ComboBox.ItemTemplate>
-            </ComboBox>
-            <TextBlock Text="Create or edit profiles in the Connection profiles tab." TextWrapping="Wrap" />
-            <TextBlock Text="2. Select an audio source" FontSize="18" />
-            <views:AudioDevicesView x:Name="BroadcastAudioDevices" DataContext="{Binding Audio}" />
-          </StackPanel>
-          </ScrollViewer>
+          <Grid ColumnDefinitions="*,280">
+            <ScrollViewer>
+              <StackPanel Spacing="16" Margin="0,0,16,0">
+                <TextBlock Text="1. Select a saved connection profile" FontSize="18" />
+                <ComboBox x:Name="BroadcastProfilePicker" ItemsSource="{Binding Profiles.Profiles}"
+                          SelectedItem="{Binding Profiles.SelectedProfile}" IsEnabled="{Binding Profiles.CanManage}"
+                          HorizontalAlignment="Stretch" AutomationProperties.Name="Broadcast connection profile">
+                  <ComboBox.ItemTemplate>
+                    <DataTemplate x:DataType="profiles:ConnectionProfile"><TextBlock Text="{Binding Name}" /></DataTemplate>
+                  </ComboBox.ItemTemplate>
+                </ComboBox>
+                <TextBlock Text="Create or edit profiles in the Connection profiles tab." TextWrapping="Wrap" />
+                <TextBlock Text="2. Select an audio source" FontSize="18" />
+                <views:AudioDevicesView x:Name="BroadcastAudioDevices" DataContext="{Binding Audio}" />
+              </StackPanel>
+            </ScrollViewer>
+            <ScrollViewer Grid.Column="1">
+              <views:AudioLevelsView x:Name="BroadcastLevels" DataContext="{Binding Audio.Levels}" />
+            </ScrollViewer>
+          </Grid>
         </DockPanel>
       </TabItem>
       <TabItem x:Name="AudioSourceTab" Header="Audio source">
         <ScrollViewer>
-          <views:AudioDevicesView x:Name="AudioDevices" DataContext="{Binding Audio}" />
+          <StackPanel Spacing="16">
+            <views:AudioDevicesView x:Name="AudioDevices" DataContext="{Binding Audio}" />
+            <views:AudioLevelsView DataContext="{Binding Audio.Levels}" />
+          </StackPanel>
         </ScrollViewer>
       </TabItem>
       <TabItem Header="Connection profiles">
