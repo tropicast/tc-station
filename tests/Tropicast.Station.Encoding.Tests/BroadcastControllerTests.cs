@@ -2,6 +2,7 @@ using Microsoft.Extensions.Logging.Abstractions;
 using Tropicast.Station.Audio;
 using Tropicast.Station.Core.Broadcasting;
 using Tropicast.Station.Infrastructure;
+using Tropicast.Station.Core.Profiles;
 
 namespace Tropicast.Station.Encoding.Tests;
 
@@ -149,6 +150,31 @@ public sealed class BroadcastControllerTests
     }
 
     [Fact]
+    public async Task Capture_and_reconnect_use_the_saved_profile_quality_and_metadata()
+    {
+        var profile = new ConnectionProfile(Guid.NewGuid(), "Saved settings", "127.0.0.1", 8000, "/settings.mp3",
+            BitrateKbps: 320, SampleRate: 48000, Channels: 1, StreamName: "Saved station");
+        await using var capture = new AudioCaptureService(new ToneAudioCaptureProvider(), NullLogger<AudioCaptureService>.Instance);
+        var encoder = new RetryingEncoder();
+        using var controller = new BroadcastController(capture, new FixedTargets(profile), encoder,
+            NullLogger<BroadcastController>.Instance);
+        await controller.StartAsync(profile.Id, "demo-input", cancellationToken: TestContext.Current.CancellationToken);
+        await UntilAsync(() => controller.Snapshot.State == BroadcastState.Live);
+        encoder.Session.Fail();
+        await UntilAsync(() => controller.Snapshot.State == BroadcastState.Reconnecting);
+        await controller.RetryNowAsync(TestContext.Current.CancellationToken);
+        await UntilAsync(() => controller.Snapshot.State == BroadcastState.Live);
+        Assert.Equal(2, encoder.Requests.Count);
+        Assert.All(encoder.Requests, request =>
+        {
+            Assert.Equal(profile, request.Target.Profile);
+            Assert.Equal(320, request.Options.BitrateKbps);
+            Assert.Equal(new AudioFormat(48000, 1), request.Options.Format);
+        });
+        Assert.Equal(new AudioFormat(48000, 1), encoder.Session.LastFormat);
+    }
+
+    [Fact]
     public async Task Initial_unreachable_server_retries_with_capture_but_auth_on_retry_is_terminal()
     {
         await using var capture = new AudioCaptureService(new ToneAudioCaptureProvider(), NullLogger<AudioCaptureService>.Instance);
@@ -266,6 +292,7 @@ public sealed class BroadcastControllerTests
 
     internal sealed class RetryingEncoder : IBroadcastEncoder
     {
+        internal List<(BroadcastTarget Target, EncoderOptions Options)> Requests { get; } = [];
         internal int Starts { get; private set; }
         internal MemoryEncoderSession Session { get; private set; } = new();
         internal Func<int, IOException?>? StartError { get; init; }
@@ -274,6 +301,7 @@ public sealed class BroadcastControllerTests
         public async Task<IEncoderSession> StartAsync(BroadcastTarget target, EncoderOptions? options = null, CancellationToken cancellationToken = default)
         {
             Starts++;
+            Requests.Add((target, options!));
             if (BlockRetry && Starts > 1)
             {
                 await Task.Delay(Timeout.Infinite, cancellationToken);
@@ -299,10 +327,10 @@ public sealed class BroadcastControllerTests
     }
 }
 
-internal sealed class FixedTargets : IBroadcastTargetProvider
+internal sealed class FixedTargets(ConnectionProfile? profile = null) : IBroadcastTargetProvider
 {
     public Task<BroadcastTarget> GetAsync(Guid profileId, CancellationToken cancellationToken = default)
-        => Task.FromResult(new BroadcastTarget(new(profileId, "Station", "127.0.0.1", 8000, "/test.mp3"), "test-only"));
+        => Task.FromResult(new BroadcastTarget(profile ?? new(profileId, "Station", "127.0.0.1", 8000, "/test.mp3"), "test-only"));
 }
 
 internal sealed class MemoryEncoder : IBroadcastEncoder
@@ -323,6 +351,7 @@ internal sealed class MemoryEncoderSession : IEncoderSession
     internal bool RejectFrames { get; init; }
     internal int Frames { get; private set; }
     internal int Disposals { get; private set; }
+    internal AudioFormat? LastFormat { get; private set; }
     public EncoderSnapshot Snapshot => Volatile.Read(ref _snapshot);
     public Task Completion => _completion.Task;
     public void Submit(PcmFrame frame)
@@ -336,6 +365,7 @@ internal sealed class MemoryEncoderSession : IEncoderSession
             throw new EncoderException("Encoder queue overrun.");
         }
         Frames++;
+        LastFormat = frame.Format;
         Volatile.Write(ref _snapshot, new(EncoderState.Streaming, "Live", frame.Data.Length));
     }
     internal void Fail(IOException? error = null)

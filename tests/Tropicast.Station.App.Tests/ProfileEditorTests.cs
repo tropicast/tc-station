@@ -31,6 +31,16 @@ public sealed class ProfileEditorTests
         Assert.False(editor.SaveCommand.CanExecute(null));
         editor.Name = "Studio";
         editor.Password = "sentinel-source-password";
+        Assert.Equal(128, editor.BitrateKbps);
+        Assert.Equal(44100, editor.SampleRate);
+        Assert.Equal(2, editor.Channels);
+        editor.BitrateKbps = 192;
+        editor.SampleRate = 48000;
+        editor.Channels = 1;
+        editor.StreamName = "Studio radio";
+        editor.StreamDescription = "Local programming";
+        editor.StreamGenre = "Talk";
+        editor.StreamUrl = "https://example.com/studio";
         Assert.True(editor.SaveCommand.CanExecute(null));
         await editor.SaveCommand.ExecuteAsync(null);
         Assert.Equal("", editor.Password);
@@ -39,11 +49,30 @@ public sealed class ProfileEditorTests
         await editor.EditCommand.ExecuteAsync(null);
         Assert.Equal("", editor.Password);
         Assert.Contains("Leave blank", editor.PasswordHint, StringComparison.Ordinal);
+        Assert.Equal(192, editor.BitrateKbps);
+        Assert.Equal(48000, editor.SampleRate);
+        Assert.Equal(1, editor.Channels);
+        Assert.Equal("Studio radio", editor.StreamName);
+        Assert.Equal("Local programming", editor.StreamDescription);
+        Assert.Equal("Talk", editor.StreamGenre);
+        Assert.Equal("https://example.com/studio", editor.StreamUrl);
+        window.FindControl<TabControl>("MainTabs")!.SelectedIndex = 2;
+        window.UpdateLayout();
+        Assert.Equal(192, window.FindControl<ComboBox>("ProfileBitrate")!.SelectedItem);
+        Assert.Equal("Studio radio", window.FindControl<TextBox>("StreamNameInput")!.Text);
+        editor.StreamDescription = "bad\r\nheader";
+        Assert.False(editor.SaveCommand.CanExecute(null));
+        editor.StreamDescription = "Local programming";
         editor.Port = "not a port";
         Assert.False(editor.SaveCommand.CanExecute(null));
         Assert.False(editor.TestCommand.CanExecute(null));
         editor.Port = "8000";
         Assert.True(editor.SaveCommand.CanExecute(null));
+        editor.NewCommand.Execute(null);
+        Assert.Equal(128, editor.BitrateKbps);
+        Assert.Equal(44100, editor.SampleRate);
+        Assert.Equal(2, editor.Channels);
+        Assert.Equal("", editor.StreamName);
         window.Close();
     }
 
@@ -60,12 +89,17 @@ public sealed class ProfileEditorTests
         editor.SelectedProfile = profile;
         await editor.EditCommand.ExecuteAsync(null);
         editor.Mount = "/edited.mp3";
+        editor.BitrateKbps = 320;
+        editor.StreamName = "Unsaved stream name";
         await editor.TestCommand.ExecuteAsync(null);
         Assert.Equal("/edited.mp3", tester.Target?.Profile.Mount);
+        Assert.Equal(320, tester.Target?.Profile.BitrateKbps);
+        Assert.Equal("Unsaved stream name", tester.Target?.Profile.StreamName);
         Assert.Equal("sentinel-password", tester.Target?.Password);
         Assert.Equal("", editor.Password);
         Assert.Equal("Accepted", editor.Status);
         Assert.Equal("/live.mp3", Assert.Single(profiles.Items).Mount);
+        Assert.Equal(128, Assert.Single(profiles.Items).BitrateKbps);
     }
 
     [Fact]

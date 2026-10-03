@@ -77,7 +77,7 @@ public sealed partial class BroadcastController(
             {
                 await capture.StopAsync(starting.Token).ConfigureAwait(false);
                 _target = await targets.GetAsync(profileId, starting.Token).ConfigureAwait(false);
-                _options = options ?? new();
+                _options = options ?? EncoderOptions.FromProfile(_target.Profile);
                 await capture.StartAsync(deviceId, _options.Format, starting.Token).ConfigureAwait(false);
                 if (!capture.Snapshot.IsCapturing)
                 {

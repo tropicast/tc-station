@@ -38,6 +38,9 @@ public sealed partial class BroadcastViewModel : ViewModelBase, IDisposable
     public string ActionLabel => IsActive ? "Stop broadcast" : "Go Live";
     public string TrayLabel => $"Tropicast Station — {StateLabel} ({Elapsed}){(IsReconnecting ? $" — {ReconnectStatus}" : "")}";
     public bool HasActiveBroadcast => _controller.Snapshot.IsActive;
+    public string StreamSettings => _profiles.SelectedProfile is { } profile
+        ? $"{profile.BitrateKbps} kbps MP3, {profile.SampleRate} Hz, {(profile.Channels == 1 ? "mono" : "stereo")}. Stream name: {(profile.StreamName.Length == 0 ? "(not set)" : profile.StreamName)}"
+        : "Select a saved profile to see its stream settings.";
     private bool CanGoLive => !IsActive && !_disposed && !_confirming && !_profiles.IsBusy && !_audio.IsBusy
         && _profiles.SelectedProfile is not null && (_audio.SelectedInput ?? _audio.SelectedOutput) is not null;
     private bool CanStop => IsActive && State != BroadcastState.Stopping && !_confirming && !_disposed;
@@ -56,9 +59,8 @@ public sealed partial class BroadcastViewModel : ViewModelBase, IDisposable
     {
         var profile = _profiles.SelectedProfile!;
         var device = (_audio.SelectedInput ?? _audio.SelectedOutput)!;
-        var options = new EncoderOptions(new(_audio.SampleRate, _audio.Channels));
         SetLocked(true);
-        await _controller.StartAsync(profile.Id, device.Id, options);
+        await _controller.StartAsync(profile.Id, device.Id);
         ApplySnapshot();
     }
 
@@ -151,7 +153,14 @@ public sealed partial class BroadcastViewModel : ViewModelBase, IDisposable
         NotifyCommands();
     }
 
-    private void OnSelectionChanged(object? sender, PropertyChangedEventArgs e) => NotifyCommands();
+    private void OnSelectionChanged(object? sender, PropertyChangedEventArgs e)
+    {
+        NotifyCommands();
+        if (e.PropertyName == nameof(ProfileEditorViewModel.SelectedProfile))
+        {
+            OnPropertyChanged(nameof(StreamSettings));
+        }
+    }
     private void NotifyCommands()
     {
         GoLiveCommand.NotifyCanExecuteChanged();

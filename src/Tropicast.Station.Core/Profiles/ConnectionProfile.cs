@@ -7,7 +7,9 @@ namespace Tropicast.Station.Core.Profiles;
 /// <summary>Non-secret connection settings. Passwords are keyed by Id in the OS secure store.</summary>
 public sealed record ConnectionProfile(
     Guid Id, string Name, string Host, int Port, string Mount,
-    string Username = "source", bool UseTls = false, string ContentType = "audio/mpeg")
+    string Username = "source", bool UseTls = false, string ContentType = "audio/mpeg",
+    int BitrateKbps = 128, int SampleRate = 44100, int Channels = 2,
+    string StreamName = "", string StreamDescription = "", string StreamGenre = "", string StreamUrl = "")
 {
     [JsonIgnore]
     public Uri Endpoint => new UriBuilder(UseTls ? "https" : "http", Host, Port, Mount).Uri;
@@ -60,7 +62,38 @@ public static partial class ProfileValidator
             errors.Add("Select audio/mpeg, audio/aac or audio/ogg.");
         }
 
+        if (profile.BitrateKbps is not (64 or 96 or 128 or 192 or 320))
+        {
+            errors.Add("Select a bitrate of 64, 96, 128, 192 or 320 kbps.");
+        }
+        if (profile.SampleRate is not (44100 or 48000))
+        {
+            errors.Add("Select a sample rate of 44100 or 48000 Hz.");
+        }
+        if (profile.Channels is not (1 or 2))
+        {
+            errors.Add("Select mono (1 channel) or stereo (2 channels).");
+        }
+        ValidateMetadata(errors, profile.StreamName, "Stream name", 128);
+        ValidateMetadata(errors, profile.StreamDescription, "Stream description", 512);
+        ValidateMetadata(errors, profile.StreamGenre, "Stream genre", 128);
+        ValidateMetadata(errors, profile.StreamUrl, "Stream URL", 512);
+        if (!string.IsNullOrEmpty(profile.StreamUrl)
+            && (!Uri.TryCreate(profile.StreamUrl, UriKind.Absolute, out var url)
+                || url.Scheme is not ("http" or "https") || string.IsNullOrEmpty(url.Host) || url.UserInfo.Length > 0))
+        {
+            errors.Add("Stream URL must be an absolute HTTP or HTTPS address without credentials.");
+        }
+
         return errors;
+    }
+
+    private static void ValidateMetadata(List<string> errors, string? value, string name, int limit)
+    {
+        if (value is null || value.Length > limit || value.Any(char.IsControl))
+        {
+            errors.Add($"{name} must be at most {limit} characters without control characters.");
+        }
     }
 
     public static bool IsValidPassword(string? password)

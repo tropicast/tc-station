@@ -9,7 +9,8 @@ an Icecast mount.
 > capture/device-picker pipeline, Windows WASAPI, Linux PulseAudio/PipeWire and
 > macOS Core Audio/ScreenCaptureKit adapters and supervised FFmpeg/Icecast
 > publishing backend, Go Live workflow, audio meters and automatic reconnect
-> (issues #2–#11). Remaining features are tracked in the MVP epic, #1.
+> and per-profile stream quality/metadata (issues #2–#12). Remaining features
+> are tracked in the MVP epic, #1.
 
 ## Prerequisites
 
@@ -324,8 +325,10 @@ broadcasting; use the separate **Go Live** control to publish it.
 ## FFmpeg / Icecast publishing backend
 
 `IBroadcastEncoder.StartAsync` accepts a resolved `BroadcastTarget` and
-`EncoderOptions` (float32, mono/stereo, 44.1/48 kHz, 32–320 kbps; default
-48 kHz stereo/128 kbps). The profile must use **audio/mpeg**. It returns an
+optional `EncoderOptions` (float32, mono/stereo, 44.1/48 kHz,
+64/96/128/192/320 kbps). Without an override it uses the saved profile's settings;
+new profiles default to **44.1 kHz stereo/128 kbps**. The profile must use
+**audio/mpeg**. It returns an
 `IEncoderSession`; hand normalized `AudioCaptureService.FrameAvailable` frames
 to `Submit`, observe `Completion` and `Snapshot`, then stop/dispose the session.
 `Submit` copies PCM and never blocks a capture callback. Invalid format,
@@ -404,8 +407,8 @@ capture clears the readings and clipping hold.
 
 The optional **in-app notification** is off by default and fires once per
 silence episode, not on every meter tick. Warnings work in preview and live
-mode and never stop the stream. These session-only preferences reset when
-the app restarts; persistent application settings are tracked in issue #12.
+mode and never stop the stream. These session-only meter preferences reset
+when the app restarts; they are independent of saved profile encoder settings.
 
 ## Go Live / Stop
 
@@ -415,6 +418,9 @@ source**, then press **Go Live**. Create/save credentials in the Connection
 profiles tab first. The current encoder requires an **audio/mpeg** profile and
 the bundled FFmpeg described above. Starting a broadcast replaces any active
 local preview with capture in the selected encoder format.
+The Broadcast tab shows the selected saved profile's bitrate, rate, channels
+and stream name. Unsaved editor changes and the source picker's **preview**
+rate/channels do not override saved broadcast settings.
 
 The status badge and text expose **Idle → Connecting → Live → Stopping → Idle**,
 plus **Error** on capture/connection/encoder failure. **Live** begins when the
@@ -482,7 +488,28 @@ reset at the next Go Live. Initial connection waiting is not live downtime.
 
 Create a profile with a name, hostname/IP (no scheme or port), port, mount path
 (for example `/live.mp3`), source username (`source` by default), password,
-TLS selection and content type. **Save profile** writes non-secret settings
+TLS selection and content type. Each profile also saves **MP3 bitrate**
+(64/96/128/192/320 kbps), **sample rate** (44100/48000 Hz), and **channels**
+(1 mono / 2 stereo). Defaults are 128 kbps, 44100 Hz, stereo. Existing profiles
+without these fields load with those defaults; explicitly invalid values are
+reported as corrupt/invalid settings, not silently replaced.
+
+Optional **stream name**, **description**, **genre** and **website URL** identify
+the stream to listeners. The profile name labels the local saved connection;
+it is distinct from the public stream name. These values are sent with the
+authenticated source handshake as `Ice-Name`, `Ice-Description`, `Ice-Genre`,
+`Ice-URL`, `Ice-Bitrate` and `Ice-Audio-Info`. Metadata is sent again on every
+reconnect. Icecast's `/status-json.xsl` exposes `server_name`,
+`server_description`, `genre`, `server_url` and `bitrate` while the mount is live.
+Blank optional metadata is omitted, allowing server defaults.
+
+Names/genres allow up to 128 characters, descriptions/URLs up to 512.
+Control characters are rejected; website URLs must be absolute HTTP/HTTPS
+addresses without credentials. Metadata is public: never enter passwords or
+other secrets there. The encoder remains MP3-only despite profiles supporting
+other content types for connection testing.
+
+**Save profile** writes non-secret settings
 to the user's application-data directory:
 
 - Windows: `%APPDATA%\Tropicast\Station\profiles.json`
@@ -507,7 +534,7 @@ for a later broadcast. Authentication failure (401), mount in use (409),
 publishing denied (403), network failure and TLS errors are reported separately.
 Do not use an Icecast admin or shared production source password.
 
-Future broadcasting code must resolve a saved profile through
+Broadcasting resolves a saved profile through
 `IBroadcastTargetProvider`. `ManualBroadcastTargetProvider` rejects invalid
 profiles and missing credentials before returning an ephemeral target; a
 future API-backed provider can replace it without changing the capture pipeline.
@@ -566,3 +593,8 @@ TC_TEST_ICECAST_EXECUTABLE=/usr/bin/icecast2 dotnet test \
 The test uses known test-only passwords, synthetic tones, a unique private
 container/process and an ephemeral host port; it removes its own resources
 afterward and never records microphones or restarts a production server.
+
+The same opt-in server harness verifies stream metadata against
+`status-json.xsl`, then decodes listener MP3 to check the saved sample rate and
+channel count. Use `--filter FullyQualifiedName~Real_Icecast_status` with either
+server environment variable above to run that acceptance check alone.

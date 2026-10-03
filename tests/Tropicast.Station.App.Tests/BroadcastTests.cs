@@ -22,7 +22,7 @@ public sealed class BroadcastTests
     [AvaloniaFact]
     public async Task Three_step_flow_locks_settings_and_stop_requires_confirmation()
     {
-        var profile = TestProfiles.Valid();
+        var profile = TestProfiles.Valid() with { BitrateKbps = 192, SampleRate = 44100, Channels = 2, StreamName = "Saved radio" };
         var encoder = new FakeEncoder();
         var confirmation = new Confirmation();
         using var host = CreateHost(profile, encoder, confirmation);
@@ -38,6 +38,8 @@ public sealed class BroadcastTests
         model.Profiles.SelectedProfile = profile;
         Assert.False(model.Broadcast.GoLiveCommand.CanExecute(null));
         model.Audio.SelectedInput = model.Audio.Inputs[0];
+        model.Audio.SampleRate = 48000;
+        model.Audio.Channels = 1; // Preview settings must not override the selected saved profile.
         Assert.True(model.Broadcast.GoLiveCommand.CanExecute(null));
         Assert.True(button.Focusable);
         await model.Broadcast.GoLiveCommand.ExecuteAsync(null);
@@ -45,6 +47,10 @@ public sealed class BroadcastTests
         await UntilAsync(() => model.Audio.Levels.ChannelLevels.Count == 2
             && model.Audio.Levels.ChannelLevels[0].Peak > -20);
         Assert.True(model.Audio.Levels.IsActive);
+        Assert.Equal(192, encoder.Options?.BitrateKbps);
+        Assert.Equal(44100, encoder.Options?.Format.SampleRate);
+        Assert.Equal(2, encoder.Options?.Format.Channels);
+        Assert.Contains("Saved radio", window.FindControl<TextBlock>("SavedStreamSettings")!.Text!, StringComparison.Ordinal);
         Assert.False(model.Profiles.CanManage);
         Assert.False(model.Profiles.TestCommand.CanExecute(null));
         Assert.False(model.Profiles.SaveCommand.CanExecute(null));
@@ -264,6 +270,7 @@ public sealed class BroadcastTests
     {
         internal Session Session { get; private set; } = new();
         internal IOException? StartError { get; set; }
+        internal EncoderOptions? Options { get; private set; }
         public Task<IEncoderSession> StartAsync(BroadcastTarget target, EncoderOptions? options = null, CancellationToken cancellationToken = default)
         {
             if (StartError is { } error)
@@ -271,6 +278,7 @@ public sealed class BroadcastTests
                 return Task.FromException<IEncoderSession>(error);
             }
             Session = new();
+            Options = options;
             return Task.FromResult<IEncoderSession>(Session);
         }
     }

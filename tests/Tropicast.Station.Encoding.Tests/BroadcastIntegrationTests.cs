@@ -44,7 +44,7 @@ public sealed class BroadcastIntegrationTests
         await controller.StopAsync(deadline.Token);
         Assert.Equal(BroadcastState.Idle, controller.Snapshot.State);
         Assert.False(capture.Snapshot.IsCapturing);
-        await EncoderTests.AssertDecodableAsync(captured.ToArray(), 3.8);
+        await EncoderTests.AssertDecodableAsync(captured.ToArray(), 3.8, profile.SampleRate, profile.Channels);
     }
 
     private sealed class Target(BroadcastTarget target) : IBroadcastTargetProvider
