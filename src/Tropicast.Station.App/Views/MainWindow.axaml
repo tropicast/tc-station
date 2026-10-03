@@ -148,6 +148,18 @@
       </StackPanel>
       </ScrollViewer>
       </TabItem>
+      <TabItem Header="Diagnostics">
+        <StackPanel Spacing="12">
+          <TextBlock Text="Safe diagnostics for support" FontSize="20" />
+          <TextBlock Text="User log directory" FontWeight="Bold" />
+          <TextBlock x:Name="LogDirectory" TextWrapping="Wrap" />
+          <TextBlock Text="Export a ZIP containing app/OS versions, anonymous device formats, broadcast counters and recent structured logs. Profiles, passwords, endpoints, metadata, device names/IDs, audio and raw errors are excluded."
+                     TextWrapping="Wrap" />
+          <Button x:Name="ExportDiagnosticsButton" Content="Export diagnostics" Click="OnExportDiagnostics"
+                  AutomationProperties.Name="Export diagnostics" />
+          <TextBlock x:Name="DiagnosticStatus" Text="Choose a destination; nothing is uploaded automatically." TextWrapping="Wrap" />
+        </StackPanel>
+      </TabItem>
     </TabControl>
   </DockPanel>
 </Window>

@@ -9,11 +9,59 @@ using Tropicast.Station.Audio;
 using Tropicast.Station.Core.Broadcasting;
 using Tropicast.Station.Core.Profiles;
 using Tropicast.Station.Infrastructure;
+using Microsoft.Extensions.Logging;
 
 namespace Tropicast.Station.Encoding.Tests;
 
 public sealed class EncoderTests
 {
+    [Fact]
+    public async Task Live_native_session_logs_contain_no_configured_password_urls_or_command_lines()
+    {
+        RequireBundle();
+        var directory = Path.Combine(Path.GetTempPath(), $"tc-live-logs-{Guid.NewGuid():N}");
+        using var console = new StringWriter();
+        using var logs = new SafeLogProvider(directory, console);
+        try
+        {
+            await using var server = new FakeTropicast();
+            await using var capture = new AudioCaptureService(new ToneAudioCaptureProvider(),
+                new ProviderLogger<AudioCaptureService>(logs));
+            using var encoder = new FfmpegBroadcastEncoder(new ProviderLogger<FfmpegBroadcastEncoder>(logs));
+            using var controller = new BroadcastController(capture,
+                new FixedTargets(server.Target.Profile, server.Target.Password), encoder, new ProviderLogger<BroadcastController>(logs));
+            await controller.StartAsync(server.Target.Profile.Id, "demo-input", cancellationToken: TestContext.Current.CancellationToken);
+            await BroadcastControllerTests.UntilAsync(() => controller.Snapshot.State == BroadcastState.Live);
+            await Task.Delay(300, TestContext.Current.CancellationToken);
+            await controller.StopAsync(TestContext.Current.CancellationToken);
+            await server.Done.WaitAsync(TimeSpan.FromSeconds(5), TestContext.Current.CancellationToken);
+            Assert.True(server.Audio.Length > 1000);
+            var text = console + string.Join("", Directory.GetFiles(directory).Select(File.ReadAllText));
+            Assert.Contains("\"State\":2", text, StringComparison.Ordinal);
+            Assert.DoesNotContain(server.Target.Password, text, StringComparison.Ordinal);
+            Assert.DoesNotContain(Convert.ToBase64String(System.Text.Encoding.UTF8.GetBytes($"source:{server.Target.Password}")), text, StringComparison.Ordinal);
+            Assert.DoesNotContain(server.Target.Profile.Endpoint.ToString(), text, StringComparison.Ordinal);
+            Assert.DoesNotContain("ffmpeg -", text, StringComparison.OrdinalIgnoreCase);
+            Assert.DoesNotContain("icecast", text, StringComparison.OrdinalIgnoreCase);
+        }
+        finally
+        {
+            if (Directory.Exists(directory))
+            {
+                Directory.Delete(directory, recursive: true);
+            }
+        }
+    }
+
+    private sealed class ProviderLogger<T>(SafeLogProvider provider) : ILogger<T>
+    {
+        private readonly ILogger _logger = provider.CreateLogger(typeof(T).FullName!);
+        public IDisposable? BeginScope<TState>(TState state) where TState : notnull => _logger.BeginScope(state);
+        public bool IsEnabled(LogLevel logLevel) => _logger.IsEnabled(logLevel);
+        public void Log<TState>(LogLevel logLevel, EventId eventId, TState state, Exception? exception, Func<TState, Exception?, string> formatter)
+            => _logger.Log(logLevel, eventId, state, exception, formatter);
+    }
+
     [Fact]
     public void New_encoder_options_match_profile_defaults()
     {
@@ -60,9 +108,9 @@ public sealed class EncoderTests
     [InlineData(503, ConnectionTestStatus.Unreachable)]
     public async Task Publishing_rejections_are_classified_without_starting_encoder(int code, ConnectionTestStatus status)
     {
-        await using var server = new FakeIcecast(code);
+        await using var server = new FakeTropicast(code);
         using var encoder = CreateEncoder();
-        var error = await Assert.ThrowsAsync<IcecastSourceException>(() =>
+        var error = await Assert.ThrowsAsync<TropicastSourceException>(() =>
             encoder.StartAsync(server.Target, cancellationToken: TestContext.Current.CancellationToken));
         Assert.Equal(status, error.Status);
         Assert.DoesNotContain(server.Target.Password, error.Message, StringComparison.Ordinal);
@@ -87,7 +135,7 @@ public sealed class EncoderTests
     public async Task Saved_quality_and_metadata_reach_handshake_and_actual_MP3(int bitrate, int rate, int channels)
     {
         RequireBundle();
-        await using var server = new FakeIcecast();
+        await using var server = new FakeTropicast();
         var profile = server.Target.Profile with
         {
             BitrateKbps = bitrate, SampleRate = rate, Channels = channels,
@@ -127,7 +175,7 @@ public sealed class EncoderTests
     public async Task Bundled_encoder_produces_decodable_MP3_and_graceful_stop_reaps_child(bool finalAcknowledgement)
     {
         RequireBundle();
-        await using var server = new FakeIcecast(finalAcknowledgement: finalAcknowledgement);
+        await using var server = new FakeTropicast(finalAcknowledgement: finalAcknowledgement);
         using var encoder = CreateEncoder();
         var session = await encoder.StartAsync(server.Target, cancellationToken: TestContext.Current.CancellationToken);
         await FeedToneAsync(session, 4);
@@ -148,7 +196,7 @@ public sealed class EncoderTests
     public async Task Host_owner_disposal_stops_active_stream_even_without_session_disposal()
     {
         RequireBundle();
-        await using var server = new FakeIcecast();
+        await using var server = new FakeTropicast();
         var encoder = CreateEncoder();
         var session = await encoder.StartAsync(server.Target, cancellationToken: TestContext.Current.CancellationToken);
         await FeedToneAsync(session, 2);
@@ -163,7 +211,7 @@ public sealed class EncoderTests
     public async Task Server_disconnect_is_failure_and_no_new_audio_is_accepted()
     {
         RequireBundle();
-        await using var server = new FakeIcecast(disconnectAfterBytes: 1024);
+        await using var server = new FakeTropicast(disconnectAfterBytes: 1024);
         using var encoder = CreateEncoder();
         var session = await encoder.StartAsync(server.Target, cancellationToken: TestContext.Current.CancellationToken);
         try
@@ -184,7 +232,7 @@ public sealed class EncoderTests
     public async Task Format_change_and_two_second_queue_overrun_fail_explicitly(bool formatChange)
     {
         RequireBundle();
-        await using var server = new FakeIcecast();
+        await using var server = new FakeTropicast();
         using var encoder = CreateEncoder();
         var session = await encoder.StartAsync(server.Target, cancellationToken: TestContext.Current.CancellationToken);
         var frame = formatChange ? new PcmFrame(new(44100, 1), new byte[4])
@@ -199,7 +247,7 @@ public sealed class EncoderTests
     public async Task Nonfinite_PCM_is_rejected_before_native_encoding()
     {
         RequireBundle();
-        await using var server = new FakeIcecast();
+        await using var server = new FakeTropicast();
         using var encoder = CreateEncoder();
         var session = await encoder.StartAsync(server.Target, cancellationToken: TestContext.Current.CancellationToken);
         var bytes = new byte[8];
@@ -213,7 +261,7 @@ public sealed class EncoderTests
     public async Task A_second_active_encoder_is_rejected_without_reserving_another_mount()
     {
         RequireBundle();
-        await using var server = new FakeIcecast();
+        await using var server = new FakeTropicast();
         using var encoder = CreateEncoder();
         var session = await encoder.StartAsync(server.Target, cancellationToken: TestContext.Current.CancellationToken);
         await Assert.ThrowsAsync<InvalidOperationException>(() => encoder.StartAsync(server.Target,
@@ -225,8 +273,8 @@ public sealed class EncoderTests
     [Fact]
     public async Task A_stuck_child_is_killed_after_graceful_stop_timeout()
     {
-        await using var server = new FakeIcecast();
-        var connection = await IcecastSourceConnection.ConnectAsync(server.Target, TestContext.Current.CancellationToken);
+        await using var server = new FakeTropicast();
+        var connection = await TropicastSourceConnection.ConnectAsync(server.Target, TestContext.Current.CancellationToken);
         var start = new ProcessStartInfo(OperatingSystem.IsWindows() ? "cmd.exe" : "/bin/sh")
         {
             UseShellExecute = false, RedirectStandardInput = true, RedirectStandardOutput = true, RedirectStandardError = true,
@@ -256,8 +304,8 @@ public sealed class EncoderTests
     [Fact]
     public async Task Unexpected_child_exit_is_a_failure_and_releases_the_mount()
     {
-        await using var server = new FakeIcecast();
-        var connection = await IcecastSourceConnection.ConnectAsync(server.Target, TestContext.Current.CancellationToken);
+        await using var server = new FakeTropicast();
+        var connection = await TropicastSourceConnection.ConnectAsync(server.Target, TestContext.Current.CancellationToken);
         var start = new ProcessStartInfo(OperatingSystem.IsWindows() ? "cmd.exe" : "/bin/sh")
         {
             UseShellExecute = false, RedirectStandardInput = true, RedirectStandardOutput = true, RedirectStandardError = true,
@@ -426,7 +474,7 @@ public sealed class EncoderTests
     }
 }
 
-internal sealed class FakeIcecast : IAsyncDisposable
+internal sealed class FakeTropicast : IAsyncDisposable
 {
     private readonly TcpListener _listener = new(IPAddress.Loopback, 0);
     private readonly CancellationTokenSource _shutdown = new(TimeSpan.FromSeconds(30));
@@ -436,7 +484,7 @@ internal sealed class FakeIcecast : IAsyncDisposable
     internal Task Done { get; }
     internal Task<string> Header => _header.Task;
 
-    internal FakeIcecast(int status = 100, int? disconnectAfterBytes = null, bool finalAcknowledgement = false)
+    internal FakeTropicast(int status = 100, int? disconnectAfterBytes = null, bool finalAcknowledgement = false)
     {
         _listener.Start();
         Target = new(new(Guid.NewGuid(), "Test source", "127.0.0.1",

@@ -3,14 +3,14 @@ using Tropicast.Station.Core.Broadcasting;
 
 namespace Tropicast.Station.Encoding.Tests;
 
-public sealed class IcecastIntegrationTests
+public sealed class TropicastIntegrationTests
 {
     [Fact]
-    public async Task Real_Icecast_listener_receives_audio_mpeg_and_decodable_tone()
+    public async Task Real_Tropicast_listener_receives_audio_mpeg_and_decodable_tone()
     {
         if (Environment.GetEnvironmentVariable("TC_TEST_ICECAST_PORT") is not { } port)
         {
-            Assert.Skip("Set TC_TEST_ICECAST_PORT to Icecast with test source password tc-test-source.");
+            Assert.Skip("Set TC_TEST_ICECAST_PORT to Tropicast with test source password tc-test-source.");
             return;
         }
         EncoderTests.RequireBundle();

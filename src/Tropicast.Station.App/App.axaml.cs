@@ -30,6 +30,10 @@ public partial class App : Application
                 () => Dispatcher.UIThread.Post(() => desktop.Shutdown()));
 
             desktop.MainWindow = _host.Services.GetRequiredService<MainWindow>();
+            var errors = _host.Services.GetRequiredService<UnhandledErrors>();
+            errors.Owner = desktop.MainWindow;
+            errors.Shutdown = () => desktop.Shutdown(1);
+            errors.Attach();
             _tray = new BroadcastTray(desktop.MainWindow, _host.Services.GetRequiredService<ViewModels.BroadcastViewModel>());
             desktop.Exit += OnExit;
         }
@@ -45,6 +49,7 @@ public partial class App : Application
         }
 
         using var cts = new CancellationTokenSource(HostShutdownTimeout);
+        _host.Services.GetRequiredService<UnhandledErrors>().Dispose();
         _tray?.Dispose();
         _tray = null;
         _host.StopAsync(cts.Token).GetAwaiter().GetResult();

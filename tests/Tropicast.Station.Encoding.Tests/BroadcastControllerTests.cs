@@ -180,7 +180,7 @@ public sealed class BroadcastControllerTests
         await using var capture = new AudioCaptureService(new ToneAudioCaptureProvider(), NullLogger<AudioCaptureService>.Instance);
         var encoder = new RetryingEncoder
         {
-            StartError = attempt => new IcecastSourceException(attempt == 1
+            StartError = attempt => new TropicastSourceException(attempt == 1
                 ? ConnectionTestStatus.Unreachable : ConnectionTestStatus.AuthenticationFailed,
                 attempt == 1 ? "Server unavailable." : "Authentication failed. Check the source password."),
         };
@@ -261,7 +261,7 @@ public sealed class BroadcastControllerTests
     [InlineData(ConnectionTestStatus.Unreachable, true)]
     [InlineData(ConnectionTestStatus.TimedOut, true)]
     public void Typed_source_status_controls_retry_not_message_text(ConnectionTestStatus status, bool retry)
-        => Assert.Equal(retry, BroadcastController.CanRetry(new IcecastSourceException(status, "arbitrary redacted message")));
+        => Assert.Equal(retry, BroadcastController.CanRetry(new TropicastSourceException(status, "arbitrary redacted message")));
 
     [Fact]
     public void Backoff_doubles_has_jitter_and_caps_at_thirty_seconds()
@@ -327,10 +327,10 @@ public sealed class BroadcastControllerTests
     }
 }
 
-internal sealed class FixedTargets(ConnectionProfile? profile = null) : IBroadcastTargetProvider
+internal sealed class FixedTargets(ConnectionProfile? profile = null, string password = "test-only") : IBroadcastTargetProvider
 {
     public Task<BroadcastTarget> GetAsync(Guid profileId, CancellationToken cancellationToken = default)
-        => Task.FromResult(new BroadcastTarget(profile ?? new(profileId, "Station", "127.0.0.1", 8000, "/test.mp3"), "test-only"));
+        => Task.FromResult(new BroadcastTarget(profile ?? new(profileId, "Station", "127.0.0.1", 8000, "/test.mp3"), password));
 }
 
 internal sealed class MemoryEncoder : IBroadcastEncoder

@@ -9,7 +9,7 @@ an Icecast mount.
 > capture/device-picker pipeline, Windows WASAPI, Linux PulseAudio/PipeWire and
 > macOS Core Audio/ScreenCaptureKit adapters and supervised FFmpeg/Icecast
 > publishing backend, Go Live workflow, audio meters and automatic reconnect
-> and per-profile stream quality/metadata (issues #2–#12). Remaining features
+> per-profile stream quality/metadata and safe diagnostics (issues #2–#13). Remaining features
 > are tracked in the MVP epic, #1.
 
 ## Prerequisites
@@ -539,6 +539,68 @@ Broadcasting resolves a saved profile through
 profiles and missing credentials before returning an ephemeral target; a
 future API-backed provider can replace it without changing the capture pipeline.
 
+## Logging and safe diagnostics
+
+The **Diagnostics** tab shows the user log directory and **Export diagnostics**
+opens a ZIP save dialog. Nothing is uploaded automatically. The bundle contains
+`diagnostics.json` (app/OS/runtime versions, architecture, anonymous device
+kinds/default flags/native formats, broadcast state and reconnect/downtime
+counters) and `logs/recent.jsonl` (up to five recent log files).
+
+Logs use .NET `ILogger` structured events and a small rolling JSON-lines
+provider; no new logging framework is required. Files roll at **1 MiB** with
+**10 files retained**, in:
+
+- Windows: `%LOCALAPPDATA%\Tropicast\Station\logs`
+- Linux: `$XDG_STATE_HOME/Tropicast/Station/logs`, normally `~/.local/state/Tropicast/Station/logs`
+- macOS: `~/Library/Logs/Tropicast/Station`
+
+Files are created with owner read/write permission and the log directory with
+owner-only access on Unix. Each process has unique filenames. Recent records
+are flushed synchronously; writes/rotation are serialized. Logging is
+Information and above; broadcast state changes are recorded, not every meter
+tick. Disk/permission failures set an explicit failure flag and emit a fixed
+credential-safe stderr warning; export reports the logging failure.
+
+**Every configured sink**, including stderr, uses the same fail-closed
+projection. It retains only timestamp, severity, approved category, numeric
+event ID, approved error type and approved numeric counters. Raw formatted
+messages, templates, scopes, arbitrary structured fields, exception messages,
+stack traces, native stderr, URLs and FFmpeg command lines are omitted—not
+regex-redacted after logging. This also protects credentials not yet loaded
+into the app, encoded credentials and malicious diagnostic text. Avalonia's
+unfiltered trace sink is disabled. App-owned source classes and runtime
+messages use **Tropicast** naming; external Icecast commands/schema/headers
+and technical references retain their actual names.
+
+Events `1301` (bundle assembled), `1302` (broadcast state/counters), `1303`
+(unhandled error) and `1304` (export failure) support diagnosis. Broadcast
+state numbers are Idle=0, Connecting=1, Live=2, Reconnecting=3, Stopping=4,
+Error=5. Existing capture/profile/encoder warnings retain their category
+and approved error type.
+
+Export excludes profiles/passwords, endpoints, stream metadata, device
+names/stable IDs, usernames, machine names, user paths, raw errors and audio.
+Recent logs are parsed and projected again before export, so manually added
+free text/fields cannot leak. Corrupt or oversized logs produce a visible
+export failure rather than an incomplete success. Device identities are
+intentionally anonymous; users can describe their hardware separately.
+
+Unhandled dispatcher errors and unobserved task failures stop capture and
+publishing where possible, show a generic restart-required dialog, then quit.
+Handlers are detached on exit. Fatal CLR/process errors cannot reliably
+display or await a dialog: the handler synchronously records safe error type,
+emits a fixed restart message and exits with code 1 before the runtime can
+print raw managed exception details. Native fatal errors remain outside this
+managed handler's control. Startup errors
+also return exit code 1 with safe logs/stderr; no secret-bearing exception
+text is displayed. These handlers do not claim to recover corrupted state.
+
+Automated tests inject credential-bearing messages, scopes, command lines,
+URLs, exceptions and edited log records; verify both file/console sinks,
+rolling bounds/private permissions, ZIP contents, real FFmpeg live-session
+password absence and the actual dispatcher error dialog/cleanup.
+
 ## Conventions
 
 - **MVVM** with [CommunityToolkit.Mvvm](https://learn.microsoft.com/dotnet/communitytoolkit/mvvm/).
@@ -596,5 +658,5 @@ afterward and never records microphones or restarts a production server.
 
 The same opt-in server harness verifies stream metadata against
 `status-json.xsl`, then decodes listener MP3 to check the saved sample rate and
-channel count. Use `--filter FullyQualifiedName~Real_Icecast_status` with either
+channel count. Use `--filter FullyQualifiedName~Real_Tropicast_status` with either
 server environment variable above to run that acceptance check alone.

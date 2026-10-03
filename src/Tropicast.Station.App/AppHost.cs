@@ -1,5 +1,6 @@
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
+using Microsoft.Extensions.Logging;
 using Tropicast.Station.App.ViewModels;
 using Tropicast.Station.App.Views;
 using Tropicast.Station.Audio;
@@ -19,6 +20,9 @@ internal static class AppHost
     {
         var demoAudio = args.Contains("--demo-audio", StringComparer.Ordinal);
         var builder = Host.CreateApplicationBuilder(args.Where(a => a != "--demo-audio").ToArray());
+        builder.Logging.ClearProviders();
+        builder.Services.AddSingleton(_ => new SafeLogProvider(SafeLogProvider.DefaultDirectory, Console.Error));
+        builder.Services.AddSingleton<ILoggerProvider>(sp => sp.GetRequiredService<SafeLogProvider>());
         if (OperatingSystem.IsWindows() && !demoAudio)
         {
             builder.Services.AddWindowsAudioCapture();
@@ -44,9 +48,15 @@ internal static class AppHost
         builder.Services.AddSingleton<AudioLevelsViewModel>();
         builder.Services.AddSingleton<BroadcastViewModel>();
         builder.Services.AddSingleton<IBroadcastConfirmation, BroadcastConfirmation>();
+        builder.Services.AddSingleton<Diagnostics>();
+        builder.Services.AddSingleton<UnhandledErrors>();
         builder.Services.AddTransient(sp =>
         {
-            var window = new MainWindow { DataContext = sp.GetRequiredService<MainViewModel>() };
+            var window = new MainWindow
+            {
+                DataContext = sp.GetRequiredService<MainViewModel>(),
+                Diagnostics = sp.GetRequiredService<Diagnostics>(),
+            };
             if (sp.GetRequiredService<IBroadcastConfirmation>() is BroadcastConfirmation confirmation)
             {
                 confirmation.Owner = window;

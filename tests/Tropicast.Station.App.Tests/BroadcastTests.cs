@@ -157,7 +157,7 @@ public sealed class BroadcastTests
     public async Task Encoder_error_is_visible_and_unlocks_profile_and_audio_selection()
     {
         var profile = TestProfiles.Valid();
-        var encoder = new FakeEncoder { StartError = new IcecastSourceException(ConnectionTestStatus.AuthenticationFailed, "Authentication failed.") };
+        var encoder = new FakeEncoder { StartError = new TropicastSourceException(ConnectionTestStatus.AuthenticationFailed, "Authentication failed.") };
         using var host = CreateHost(profile, encoder, new Confirmation());
         var window = host.Services.GetRequiredService<MainWindow>();
         window.Show();
