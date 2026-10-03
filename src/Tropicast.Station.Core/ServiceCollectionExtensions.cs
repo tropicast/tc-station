@@ -1,4 +1,6 @@
 using Microsoft.Extensions.DependencyInjection;
+using Tropicast.Station.Core.Broadcasting;
+using Tropicast.Station.Core.Profiles;
 
 namespace Tropicast.Station.Core;
 
@@ -9,6 +11,8 @@ public static class ServiceCollectionExtensions
     {
         ArgumentNullException.ThrowIfNull(services);
         services.AddSingleton<IAppInfo, AppInfo>();
+        services.AddSingleton<ProfileService>();
+        services.AddSingleton<IBroadcastTargetProvider, ManualBroadcastTargetProvider>();
         return services;
     }
 }

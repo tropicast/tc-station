@@ -4,9 +4,11 @@
     <Project Path="src/Tropicast.Station.Audio/Tropicast.Station.Audio.csproj" />
     <Project Path="src/Tropicast.Station.Core/Tropicast.Station.Core.csproj" />
     <Project Path="src/Tropicast.Station.Encoding/Tropicast.Station.Encoding.csproj" />
+    <Project Path="src/Tropicast.Station.Infrastructure/Tropicast.Station.Infrastructure.csproj" />
   </Folder>
   <Folder Name="/tests/">
     <Project Path="tests/Tropicast.Station.App.Tests/Tropicast.Station.App.Tests.csproj" />
     <Project Path="tests/Tropicast.Station.Core.Tests/Tropicast.Station.Core.Tests.csproj" />
+    <Project Path="tests/Tropicast.Station.Infrastructure.Tests/Tropicast.Station.Infrastructure.Tests.csproj" />
   </Folder>
 </Solution>

@@ -1,6 +1,8 @@
 using Microsoft.Extensions.DependencyInjection;
 using Tropicast.Station.Audio;
 using Tropicast.Station.Encoding;
+using Tropicast.Station.Core.Profiles;
+using Tropicast.Station.Tests;
 
 namespace Tropicast.Station.Core.Tests;
 
@@ -13,6 +15,8 @@ public sealed class ServiceRegistrationTests
             .AddStationCore()
             .AddStationAudio()
             .AddStationEncoding();
+        services.AddSingleton<IProfileStore, MemoryProfiles>();
+        services.AddSingleton<ISecretStore, MemorySecrets>();
 
         using var provider = services.BuildServiceProvider(new ServiceProviderOptions
         {
