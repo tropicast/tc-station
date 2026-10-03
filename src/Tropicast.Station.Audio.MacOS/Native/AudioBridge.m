@@ -4,6 +4,7 @@
 #import <CoreAudio/CoreAudio.h>
 #import <ScreenCaptureKit/ScreenCaptureKit.h>
 #import <CoreMedia/CoreMedia.h>
+#include <stddef.h>
 
 typedef void (*TCPcmCallback)(const void *, int);
 typedef void (*TCErrorCallback)(int);
@@ -21,6 +22,27 @@ static NSString *TCString(AudioObjectID device, AudioObjectPropertySelector sele
         return nil;
     }
     return CFBridgingRelease(value);
+}
+
+static BOOL TCInputChannels(const AudioBufferList *list, UInt32 size, UInt32 *channels) {
+    size_t header = offsetof(AudioBufferList, mBuffers);
+    *channels = 0;
+    if (size < sizeof(list->mNumberBuffers)) {
+        return NO;
+    }
+    if (!list->mNumberBuffers) {
+        return YES;
+    }
+    if (size < header || list->mNumberBuffers > (size - header) / sizeof(AudioBuffer)) {
+        return NO;
+    }
+    for (UInt32 b = 0; b < list->mNumberBuffers; b++) {
+        if (list->mBuffers[b].mNumberChannels > 8 - *channels) {
+            return NO;
+        }
+        *channels += list->mBuffers[b].mNumberChannels;
+    }
+    return YES;
 }
 
 char *tc_audio_list(int *error) {
@@ -64,7 +86,7 @@ char *tc_audio_list(int *error) {
                 *error = 8;
                 return NULL;
             }
-            if (bufferSize < sizeof(AudioBufferList)) {
+            if (bufferSize < sizeof(UInt32)) {
                 *error = 5;
                 return NULL;
             }
@@ -75,8 +97,9 @@ char *tc_audio_list(int *error) {
             }
             AudioBufferList *list = buffers.mutableBytes;
             UInt32 channels = 0;
-            for (UInt32 b = 0; b < list->mNumberBuffers; b++) {
-                channels += list->mBuffers[b].mNumberChannels;
+            if (!TCInputChannels(list, bufferSize, &channels)) {
+                *error = 5;
+                return NULL;
             }
             if (!channels) {
                 continue;

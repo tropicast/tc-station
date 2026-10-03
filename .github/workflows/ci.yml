@@ -38,6 +38,16 @@ jobs:
       - name: Build
         run: dotnet build Tropicast.Station.slnx -c Release --no-restore
 
+      - name: Test native macOS buffer layouts
+        if: runner.os == 'macOS'
+        run: |
+          xcrun clang -fobjc-arc -fblocks -Wall -Wextra -Werror -Wno-deprecated-declarations \
+            -mmacosx-version-min=13.0 -framework Foundation -framework AVFoundation \
+            -framework AudioToolbox -framework CoreAudio -framework ScreenCaptureKit \
+            -framework CoreMedia -framework CoreGraphics \
+            src/Tropicast.Station.Audio.MacOS/Native/AudioBridgeTests.m -o "$RUNNER_TEMP/tc-native-tests"
+          "$RUNNER_TEMP/tc-native-tests"
+
       - name: Test (Windows)
         if: runner.os == 'Windows'
         env:
