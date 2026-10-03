@@ -34,10 +34,18 @@ public sealed class IcecastConnectionTester : IConnectionTester
             Stream stream = network;
             if (tls is not null)
             {
-                await tls.AuthenticateAsClientAsync(new SslClientAuthenticationOptions
+                try
                 {
-                    TargetHost = target.Profile.Host,
-                }, deadline.Token).ConfigureAwait(false);
+                    await tls.AuthenticateAsClientAsync(new SslClientAuthenticationOptions
+                    {
+                        TargetHost = target.Profile.Host,
+                    }, deadline.Token).ConfigureAwait(false);
+                }
+                catch (IOException)
+                {
+                    return new(ConnectionTestStatus.TlsFailed, "TLS negotiation failed. Check the certificate, TLS port and server configuration.");
+                }
+
                 stream = tls;
             }
 

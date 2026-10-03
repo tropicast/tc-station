@@ -38,7 +38,14 @@ public sealed class ConnectionTesterTests
 
             await stream.WriteAsync(Encoding.ASCII.GetBytes($"HTTP/1.1 {status} Test\r\n\r\n"), deadline.Token);
             // No audio body should be sent; the probe closes immediately after the status.
-            Assert.Equal(0, await stream.ReadAsync(buffer, deadline.Token));
+            try
+            {
+                Assert.Equal(0, await stream.ReadAsync(buffer, deadline.Token));
+            }
+            catch (IOException ex) when (ex.InnerException is SocketException { SocketErrorCode: SocketError.ConnectionReset })
+            {
+                // Windows can report RST instead of EOF when the probe closes with unread response headers.
+            }
             return header.ToString();
         }, deadline.Token);
         var profile = TestProfiles.Valid() with { Host = "127.0.0.1", Port = port };
@@ -70,7 +77,9 @@ public sealed class ConnectionTesterTests
     {
         using var rsa = RSA.Create(2048);
         var request = new CertificateRequest("CN=localhost", rsa, HashAlgorithmName.SHA256, RSASignaturePadding.Pkcs1);
-        using var certificate = request.CreateSelfSigned(DateTimeOffset.UtcNow.AddMinutes(-1), DateTimeOffset.UtcNow.AddHours(1));
+        using var generated = request.CreateSelfSigned(DateTimeOffset.UtcNow.AddMinutes(-1), DateTimeOffset.UtcNow.AddHours(1));
+        // Importing the key makes it usable by Windows Schannel as well as OpenSSL.
+        using var certificate = X509CertificateLoader.LoadPkcs12(generated.Export(X509ContentType.Pfx), null);
         using var listener = new TcpListener(IPAddress.Loopback, 0);
         listener.Start();
         using var deadline = new CancellationTokenSource(TimeSpan.FromSeconds(10));
