@@ -1,0 +1,42 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:vm="using:Tropicast.Station.App.ViewModels"
+             x:Class="Tropicast.Station.App.Views.AudioLevelsView"
+             x:DataType="vm:AudioLevelsViewModel">
+  <StackPanel Spacing="6">
+    <TextBlock Text="Audio levels: peak / RMS" FontWeight="Bold" />
+    <ItemsControl x:Name="ChannelMeters" ItemsSource="{Binding ChannelLevels}">
+      <ItemsControl.ItemTemplate>
+        <DataTemplate x:DataType="vm:ChannelLevelViewModel">
+          <StackPanel Spacing="3" Margin="0,0,0,6">
+            <Grid ColumnDefinitions="*,Auto">
+              <TextBlock Text="{Binding Label}" TextWrapping="Wrap" AutomationProperties.Name="{Binding Label}" />
+              <TextBlock Grid.Column="1" Text="CLIPPING" IsVisible="{Binding IsClipping}"
+                         Foreground="#E5484D" FontWeight="Bold" Margin="8,0,0,0" />
+            </Grid>
+            <ProgressBar Minimum="-90" Maximum="0" Value="{Binding Peak}" Height="8"
+                         Foreground="#D9A441" AutomationProperties.Name="{Binding PeakName}" />
+            <ProgressBar Minimum="-90" Maximum="0" Value="{Binding Rms}" Height="8"
+                         Foreground="#2EAD77" AutomationProperties.Name="{Binding RmsName}" />
+          </StackPanel>
+        </DataTemplate>
+      </ItemsControl.ItemTemplate>
+    </ItemsControl>
+    <TextBlock x:Name="LevelStatus" Text="{Binding Status}" TextWrapping="Wrap"
+               AutomationProperties.Name="{Binding Status}" />
+    <TextBlock Text="SILENCE" IsVisible="{Binding IsSilent}" Foreground="#D9A441" FontWeight="Bold" />
+    <Expander x:Name="SilenceSettings" Header="Silence warning settings">
+      <StackPanel Spacing="6">
+        <WrapPanel>
+          <TextBlock Text="Threshold (dBFS)" VerticalAlignment="Center" Margin="0,0,8,0" />
+          <NumericUpDown Value="{Binding SilenceThreshold}" Minimum="-90" Maximum="-10" Increment="1"
+                         FormatString="0" Width="100" AutomationProperties.Name="Silence threshold in dBFS" />
+          <TextBlock Text="Duration (seconds)" VerticalAlignment="Center" Margin="12,0,8,0" />
+          <NumericUpDown Value="{Binding SilenceSeconds}" Minimum="1" Maximum="60" Increment="1"
+                         FormatString="0" Width="100" AutomationProperties.Name="Silence duration in seconds" />
+        </WrapPanel>
+        <CheckBox Content="Show an in-app notification when silence starts" IsChecked="{Binding NotifyOnSilence}" />
+      </StackPanel>
+    </Expander>
+  </StackPanel>
+</UserControl>

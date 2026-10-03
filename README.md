@@ -8,8 +8,8 @@ an Icecast mount.
 > Status: desktop scaffold, manual connection profiles, and shared audio
 > capture/device-picker pipeline, Windows WASAPI, Linux PulseAudio/PipeWire and
 > macOS Core Audio/ScreenCaptureKit adapters and supervised FFmpeg/Icecast
-> publishing backend and Go Live workflow (issues #2–#9). Meters and reconnect remain
-> in the MVP epic, #1.
+> publishing backend, Go Live workflow and audio meters (issues #2–#10).
+> Automatic reconnect and remaining features are tracked in the MVP epic, #1.
 
 ## Prerequisites
 
@@ -382,6 +382,30 @@ HTTP success and `audio/mpeg`, captures over four seconds of MP3, decodes it
 with the bundled FFmpeg, and verifies stop. No microphone is recorded.
 Linux CI runs this against an isolated localhost Icecast in addition to the
 PulseAudio/keyring tests; all three OS jobs build and exercise native FFmpeg.
+
+## Audio levels and warnings
+
+The Broadcast tab keeps per-channel **peak** (amber) and **RMS** (green)
+meters beside the primary controls. The Audio source tab has the same meters.
+Start **preview** to check levels without transmitting, or **Go Live** to monitor
+the exact normalized float32 PCM feeding the encoder (after channel mapping
+and resampling, before MP3 compression). Levels refresh at 25 Hz, in dBFS;
+zero audio is displayed at the -90 dBFS meter floor. Numeric readings can
+exceed 0 dBFS even though the bars stop at 0.
+
+**CLIPPING** appears per channel for samples at or above -0.1 dBFS, with a
+two-second hold refreshed by further clipping. **SILENCE** appears when every
+channel stays below the configured RMS threshold for the configured duration.
+Defaults are -50 dBFS and five seconds; expand **Silence warning settings**
+to choose -90 to -10 dBFS and one to 60 seconds. Changes restart the silence
+countdown. A silent loopback endpoint that delivers no packets is also detected.
+Signal recovery clears the silence warning; stopping, device loss or a new
+capture clears the readings and clipping hold.
+
+The optional **in-app notification** is off by default and fires once per
+silence episode, not on every meter tick. Warnings work in preview and live
+mode and never stop the stream. These session-only preferences reset when
+the app restarts; persistent application settings are tracked in issue #12.
 
 ## Go Live / Stop
 

@@ -41,6 +41,9 @@ public sealed class BroadcastTests
         Assert.True(button.Focusable);
         await model.Broadcast.GoLiveCommand.ExecuteAsync(null);
         await UntilAsync(() => model.Broadcast.State == BroadcastState.Live);
+        await UntilAsync(() => model.Audio.Levels.ChannelLevels.Count == 2
+            && model.Audio.Levels.ChannelLevels[0].Peak > -20);
+        Assert.True(model.Audio.Levels.IsActive);
         Assert.False(model.Profiles.CanManage);
         Assert.False(model.Profiles.TestCommand.CanExecute(null));
         Assert.False(model.Profiles.SaveCommand.CanExecute(null));
@@ -58,6 +61,8 @@ public sealed class BroadcastTests
         await model.Broadcast.StopCommand.ExecuteAsync(null);
         Dispatcher.UIThread.RunJobs();
         Assert.Equal(BroadcastState.Idle, model.Broadcast.State);
+        model.Audio.Levels.Refresh();
+        Assert.False(model.Audio.Levels.IsActive);
         Assert.True(model.Profiles.CanManage);
         Assert.True(model.Audio.CanChoose);
         Assert.Equal(1, encoder.Session.Disposals);

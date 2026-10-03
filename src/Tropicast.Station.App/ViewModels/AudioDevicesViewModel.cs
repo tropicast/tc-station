@@ -11,13 +11,15 @@ public sealed partial class AudioDevicesViewModel : ViewModelBase, IDisposable
     private readonly AudioCaptureService _capture;
     private bool _disposed;
 
-    public AudioDevicesViewModel(AudioCaptureService capture)
+    public AudioDevicesViewModel(AudioCaptureService capture, AudioLevelsViewModel levels)
     {
         _capture = capture;
+        Levels = levels;
         capture.Changed += OnCaptureChanged;
     }
 
     public string ProviderDescription => _capture.ProviderDescription;
+    public AudioLevelsViewModel Levels { get; }
     public ObservableCollection<AudioDevice> Inputs { get; } = [];
     public ObservableCollection<AudioDevice> Outputs { get; } = [];
     public IReadOnlyList<int> SampleRates { get; } = [44100, 48000];

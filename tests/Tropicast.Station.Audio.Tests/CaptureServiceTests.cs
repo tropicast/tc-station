@@ -23,8 +23,13 @@ public sealed class CaptureServiceTests
         var normalized = await firstFrame.Task.WaitAsync(TimeSpan.FromSeconds(5), TestContext.Current.CancellationToken);
         Assert.Equal(AudioFormat.EncoderDefault, normalized.Format);
         Assert.True(service.Snapshot.IsCapturing);
+        var levels = service.Levels.Read();
+        Assert.True(levels.IsActive);
+        Assert.Equal(2, levels.Channels.Count);
+        Assert.All(levels.Channels, level => Assert.InRange(level.PeakDb, -14.1, -13.9));
         await service.StopAsync(TestContext.Current.CancellationToken);
         Assert.False(service.Snapshot.IsCapturing);
+        Assert.False(service.Levels.Read().IsActive);
         var stoppedCount = count;
         await Task.Delay(80, TestContext.Current.CancellationToken);
         Assert.Equal(stoppedCount, count);
@@ -53,6 +58,7 @@ public sealed class CaptureServiceTests
         Assert.False(service.Snapshot.IsCapturing);
         Assert.Null(service.Snapshot.ActiveDeviceId);
         Assert.Single(service.Snapshot.Devices);
+        Assert.False(service.Levels.Read().IsActive);
         await service.StartAsync("demo-input", cancellationToken: TestContext.Current.CancellationToken);
         Assert.False(service.Snapshot.IsCapturing);
         Assert.Contains("no longer available", service.Snapshot.Message, StringComparison.Ordinal);
@@ -87,6 +93,7 @@ public sealed class CaptureServiceTests
         await service.RefreshAsync(TestContext.Current.CancellationToken);
         Assert.False(service.Snapshot.IsCapturing);
         Assert.Contains("format changed", service.Snapshot.Message, StringComparison.Ordinal);
+        Assert.False(service.Levels.Read().IsActive);
     }
 
     [Fact]
@@ -111,6 +118,7 @@ public sealed class CaptureServiceTests
         await provider.Session.Released.Task.WaitAsync(TimeSpan.FromSeconds(5), TestContext.Current.CancellationToken);
         Assert.False(service.Snapshot.IsCapturing);
         Assert.Contains("ended unexpectedly", service.Snapshot.Message, StringComparison.Ordinal);
+        Assert.False(service.Levels.Read().IsActive);
         await service.StopAsync(TestContext.Current.CancellationToken);
     }
 

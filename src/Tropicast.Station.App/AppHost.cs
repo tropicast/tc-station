@@ -41,6 +41,7 @@ internal static class AppHost
         builder.Services.AddSingleton<MainViewModel>();
         builder.Services.AddSingleton<ProfileEditorViewModel>();
         builder.Services.AddSingleton<AudioDevicesViewModel>();
+        builder.Services.AddSingleton<AudioLevelsViewModel>();
         builder.Services.AddSingleton<BroadcastViewModel>();
         builder.Services.AddSingleton<IBroadcastConfirmation, BroadcastConfirmation>();
         builder.Services.AddTransient(sp =>
