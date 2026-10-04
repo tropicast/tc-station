@@ -194,11 +194,13 @@ jobs:
           $env:TC_WINDOWS_PFX_PATH = $pfx
           $env:TC_WINDOWS_PFX_PASSWORD = 'tc-ci-pfx'
           $env:TC_MSIX_PUBLISHER = 'CN=Tropicast'
-          ./scripts/package-windows.ps1 -Version 0.1.0
+          pwsh -NoProfile -File ./scripts/package-windows.ps1 -Version 0.1.0
+          if ($LASTEXITCODE -ne 0) { throw "Untrusted PFX build exited with $LASTEXITCODE." }
           if (-not (Test-Path artifacts/package/Tropicast-Station-0.1.0-win-x64.msix)) { throw 'The MSIX was not produced.' }
           $env:TC_REQUIRE_TRUSTED_CHAIN = '1'
           $strictFailed = $false
-          try { ./scripts/package-windows.ps1 -Version 0.1.0 } catch { $strictFailed = $true }
+          pwsh -NoProfile -File ./scripts/package-windows.ps1 -Version 0.1.0
+          if ($LASTEXITCODE -ne 0) { $strictFailed = $true }
           if (-not $strictFailed) { throw 'TC_REQUIRE_TRUSTED_CHAIN=1 must reject an untrusted certificate.' }
           Remove-Item $pfx -Force
           $global:LASTEXITCODE = 0
