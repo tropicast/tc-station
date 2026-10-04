@@ -43,14 +43,15 @@ for size in 16 32 128 256; do
 done
 iconutil -c icns "$iconset" -o "$bundle/Contents/Resources/tropicast.icns"
 
-# Sign nested code first (never --deep): every Mach-O file, then the bundle.
+# Sign nested code first (never --deep): every Mach-O file and managed assembly, then the bundle.
 if [[ "$identity" == "-" ]]; then
   sign=(codesign --force --sign -)
 else
   sign=(codesign --force --timestamp --options runtime --sign "$identity")
 fi
 while IFS= read -r -d '' file; do
-  if file -b "$file" | grep -q 'Mach-O'; then
+  # Managed assemblies are nested code to codesign even though they are not Mach-O files.
+  if [[ "$file" == *.dll ]] || file -b "$file" | grep -q 'Mach-O'; then
     if [[ "$file" == "$bundle/Contents/MacOS/Tropicast.Station" ]]; then
       continue
     fi
@@ -58,7 +59,6 @@ while IFS= read -r -d '' file; do
   fi
 done < <(find "$bundle/Contents" -type f -print0)
 "${sign[@]}" --entitlements "$entitlements" "$bundle/Contents/MacOS/Tropicast.Station"
-# Managed assemblies and other nested files are signed by --deep; Mach-O files above are already signed inside-out.
-"${sign[@]}" --deep --entitlements "$entitlements" "$bundle"
+"${sign[@]}" --entitlements "$entitlements" "$bundle"
 codesign --verify --deep --strict --verbose=2 "$bundle"
 echo "Built $bundle (identity: $identity)"
