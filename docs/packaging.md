@@ -74,7 +74,8 @@ MSIX versions are `major.minor.patch.0`; the pre-release suffix only appears in 
 ## Code-signing secrets
 
 Configure these repository (or environment) secrets. Missing secrets never fail the build; the
-affected package is unsigned and the workflow prints a warning.
+affected package is unsigned and the workflow prints a warning. See
+[signing-secrets.md](signing-secrets.md) for how to obtain each value.
 
 | Secret | Purpose |
 |--------|---------|
