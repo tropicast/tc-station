@@ -1,0 +1,13 @@
+changelog:
+  exclude:
+    labels: [skip-changelog]
+    authors: [dependabot, github-actions]
+  categories:
+    - title: Features
+      labels: [enhancement, mvp]
+    - title: Fixes
+      labels: [bug]
+    - title: Documentation
+      labels: [documentation]
+    - title: Other changes
+      labels: ["*"]

@@ -58,8 +58,12 @@ machines or of audio capture hardware.
 
 `release.yml` runs when a tag matching `v<major>.<minor>.<patch>[-prerelease]` is pushed. The tag's
 commit must be on `main`. It builds all packages, signs them if secrets exist, writes
-`SHA256SUMS.txt`, and creates a **draft** GitHub Release (marked pre-release for `-` tags). Review
-the draft and confirm the signing state before publishing.
+`SHA256SUMS.txt`, and creates a **draft** GitHub Release (marked pre-release for `-` tags). Release
+notes are the matching `## [x.y.z]` section of [`CHANGELOG.md`](../CHANGELOG.md) (pre-release tags use
+their base version; a warning is printed if it is missing) followed by GitHub's generated list of
+merged pull requests, grouped by label (`.github/release.yml`; label a PR `skip-changelog` to omit
+it). Before tagging, rename `Unreleased` in `CHANGELOG.md` to the new version. Review the draft and
+confirm the signing state before publishing.
 
 ```bash
 git tag v0.2.0 && git push origin v0.2.0

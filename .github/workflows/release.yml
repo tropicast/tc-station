@@ -85,7 +85,9 @@ jobs:
         if: runner.os == 'Linux'
         env:
           TC_VERSION: ${{ needs.verify.outputs.core }}
-        run: bash scripts/package-linux.sh
+        run: |
+          sudo apt-get install -y -qq desktop-file-utils
+          bash scripts/package-linux.sh
 
       - name: Package (Windows MSIX)
         if: runner.os == 'Windows'
@@ -154,6 +156,10 @@ jobs:
     needs: [verify, package]
     runs-on: ubuntu-latest
     steps:
+      - uses: actions/checkout@v7
+        with:
+          sparse-checkout: CHANGELOG.md
+          sparse-checkout-cone-mode: false
       - uses: actions/download-artifact@v8
         with:
           path: dist
@@ -164,11 +170,23 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           VERSION: ${{ needs.verify.outputs.version }}
         run: |
+          core="${VERSION%%-*}"
+          # Section of CHANGELOG.md for this version (pre-release tags use their base version).
+          awk -v v="$core" '/^## \[/ { on = index($0, "[" v "]") > 0; next } on' CHANGELOG.md > notes.md
+          {
+            if [[ -s notes.md ]]; then
+              cat notes.md
+            else
+              echo "::warning::CHANGELOG.md has no section for $core; using generated notes only."
+            fi
+            echo
+            echo "> Review before publishing: confirm each package is signed (see docs/packaging.md). Builds without signing secrets are unsigned or ad-hoc signed."
+          } > release-notes.md
           cd dist
           sha256sum * > SHA256SUMS.txt
           prerelease=()
           if [[ "$VERSION" == *-* ]]; then prerelease=(--prerelease); fi
           gh release create "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" --draft "${prerelease[@]}" \
             --title "Tropicast Station $VERSION" \
-            --notes "Review before publishing: confirm each package is signed (see docs/packaging.md). Builds without signing secrets are unsigned/ad-hoc signed." \
+            --notes-file ../release-notes.md --generate-notes \
             ./*

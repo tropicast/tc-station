@@ -58,6 +58,7 @@ while IFS= read -r -d '' file; do
   fi
 done < <(find "$bundle/Contents" -type f -print0)
 "${sign[@]}" --entitlements "$entitlements" "$bundle/Contents/MacOS/Tropicast.Station"
-"${sign[@]}" --entitlements "$entitlements" "$bundle"
+# Managed assemblies and other nested files are signed by --deep; Mach-O files above are already signed inside-out.
+"${sign[@]}" --deep --entitlements "$entitlements" "$bundle"
 codesign --verify --deep --strict --verbose=2 "$bundle"
 echo "Built $bundle (identity: $identity)"
