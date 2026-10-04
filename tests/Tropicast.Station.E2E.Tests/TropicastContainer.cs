@@ -191,6 +191,10 @@ internal sealed class TropicastContainer : IAsyncDisposable
     /// <summary>Removes the container if it exists; a missing container must not hide the original failure.</summary>
     private async Task RemoveAsync()
     {
+        try
+        {
+            await DockerAsync(CancellationToken.None, "rm", "-f", _name);
+        }
         catch (Exception ex) when (ex is IOException or System.ComponentModel.Win32Exception)
         {
             // Nothing to clean up, or Docker is unavailable and the original error is more useful.
