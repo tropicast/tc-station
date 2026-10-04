@@ -143,7 +143,9 @@ internal sealed class TropicastContainer : IAsyncDisposable
         response.EnsureSuccessStatusCode();
         await using var body = await response.Content.ReadAsStreamAsync(token);
         using var document = await JsonDocument.ParseAsync(body, cancellationToken: token);
-        if (!document.RootElement.GetProperty("icestats").TryGetProperty("source", out var source))
+        // After the last source stops, Icecast reports "source": null (or omits it).
+        if (!document.RootElement.GetProperty("icestats").TryGetProperty("source", out var source)
+            || source.ValueKind is JsonValueKind.Null or JsonValueKind.Undefined)
         {
             return [];
         }
