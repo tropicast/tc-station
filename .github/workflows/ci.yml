@@ -201,6 +201,7 @@ jobs:
           try { ./scripts/package-windows.ps1 -Version 0.1.0 } catch { $strictFailed = $true }
           if (-not $strictFailed) { throw 'TC_REQUIRE_TRUSTED_CHAIN=1 must reject an untrusted certificate.' }
           Remove-Item $pfx -Force
+          $global:LASTEXITCODE = 0
 
       - name: Package and smoke-test AppImage (Linux)
         if: runner.os == 'Linux'
