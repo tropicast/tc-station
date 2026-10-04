@@ -82,7 +82,7 @@ if (-not $TestSign) {
     $ErrorActionPreference = 'Stop'
     Write-Output $verify
     if ($verifyExit -ne 0) {
-        $untrustedRoot = $verify -match 'terminated in a root certificate which is not trusted'
+        $untrustedRoot = $verify -match 'terminated in a root\s+certificate which is not trusted'
         if ($untrustedRoot -and $env:TC_REQUIRE_TRUSTED_CHAIN -ne '1') {
             Write-Warning 'The signing certificate does not chain to a trusted root (self-signed or private CA). The MSIX installs only on machines that trust this certificate; set TC_REQUIRE_TRUSTED_CHAIN=1 to make this an error.'
         } else {
