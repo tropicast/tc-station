@@ -83,6 +83,10 @@ Verify locally before uploading:
 xcrun notarytool history --apple-id "$APPLE_ID" --team-id "$APPLE_TEAM_ID" --password "$APP_SPECIFIC_PASSWORD"
 ```
 
+A self-signed PFX is accepted by the release build, which only warns that the chain is untrusted.
+Anyone installing that MSIX must first import the `.cer` into `LocalMachine\TrustedPeople`. Once you use a public CA certificate, set the repository variable
+`TC_REQUIRE_TRUSTED_CHAIN` to `1` (Settings → Secrets and variables → Actions → Variables).
+
 ## Adding them with the GitHub CLI
 
 ```bash

@@ -96,6 +96,7 @@ jobs:
           WINDOWS_PFX_BASE64: ${{ secrets.WINDOWS_PFX_BASE64 }}
           TC_WINDOWS_PFX_PASSWORD: ${{ secrets.WINDOWS_PFX_PASSWORD }}
           TC_MSIX_PUBLISHER: ${{ secrets.WINDOWS_MSIX_PUBLISHER }}
+          TC_REQUIRE_TRUSTED_CHAIN: ${{ vars.TC_REQUIRE_TRUSTED_CHAIN }}
         run: |
           if ($env:WINDOWS_PFX_BASE64) {
             $pfx = Join-Path $env:RUNNER_TEMP 'tropicast-signing.pfx'

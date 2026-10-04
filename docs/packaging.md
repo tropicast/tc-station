@@ -43,6 +43,11 @@ Without signing configuration the packages are still produced, but:
 - **MSIX cannot be installed unsigned.** `-TestSign` creates a self-signed certificate and exports
   `tropicast-test-signing.cer`; import it into `LocalMachine\TrustedPeople` (administrator) before
   `Add-AppxPackage`. Do not distribute test-signed packages.
+- **A real but untrusted certificate** (self-signed or private CA, for example a PFX in
+  `WINDOWS_PFX_BASE64`) still produces the MSIX: the build only warns that the chain is not trusted.
+  The MSIX installs on machines that import that certificate into `LocalMachine\TrustedPeople`.
+  Set the repository variable `TC_REQUIRE_TRUSTED_CHAIN` to `1` (public CA certificates) to make an untrusted chain an error.
+  A tampered or otherwise invalid signature always fails the build.
 - **macOS images are ad-hoc signed and not notarized.** Gatekeeper requires manual approval.
 - **AppImage** needs no signing.
 

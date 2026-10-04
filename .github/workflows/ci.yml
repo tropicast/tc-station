@@ -180,6 +180,28 @@ jobs:
           $app | Stop-Process -Force
           Remove-AppxPackage $pkg.PackageFullName
 
+      - name: Package MSIX with an untrusted PFX certificate (Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          # Regression test for the release signing path: a self-signed PFX must build with a warning only.
+          $cert = New-SelfSignedCertificate -Type Custom -Subject 'CN=Tropicast' -KeyUsage DigitalSignature `
+            -CertStoreLocation 'Cert:\CurrentUser\My' `
+            -TextExtension @('2.5.29.37={text}1.3.6.1.5.5.7.3.3', '2.5.29.19={text}')
+          $password = ConvertTo-SecureString 'tc-ci-pfx' -AsPlainText -Force
+          $pfx = Join-Path $env:RUNNER_TEMP 'tc-untrusted.pfx'
+          Export-PfxCertificate -Cert $cert -FilePath $pfx -Password $password | Out-Null
+          $env:TC_WINDOWS_PFX_PATH = $pfx
+          $env:TC_WINDOWS_PFX_PASSWORD = 'tc-ci-pfx'
+          $env:TC_MSIX_PUBLISHER = 'CN=Tropicast'
+          ./scripts/package-windows.ps1 -Version 0.1.0
+          if (-not (Test-Path artifacts/package/Tropicast-Station-0.1.0-win-x64.msix)) { throw 'The MSIX was not produced.' }
+          $env:TC_REQUIRE_TRUSTED_CHAIN = '1'
+          $strictFailed = $false
+          try { ./scripts/package-windows.ps1 -Version 0.1.0 } catch { $strictFailed = $true }
+          if (-not $strictFailed) { throw 'TC_REQUIRE_TRUSTED_CHAIN=1 must reject an untrusted certificate.' }
+          Remove-Item $pfx -Force
+
       - name: Package and smoke-test AppImage (Linux)
         if: runner.os == 'Linux'
         run: |
