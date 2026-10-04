@@ -52,7 +52,8 @@ Users only get a clean install if the certificate chains to a trusted root.
    ```
 
 A self-signed PFX is accepted by the release build, which only warns that the chain is untrusted.
-Anyone installing that MSIX must first import the `.cer` into `LocalMachine\TrustedPeople`.
+Anyone installing that MSIX must first trust the certificate; see
+[Installing a self-signed MSIX](packaging.md#installing-a-self-signed-msix-windows).
 Once you use a public CA certificate, set the repository variable `TC_REQUIRE_TRUSTED_CHAIN` to `1`
 (Settings → Secrets and variables → Actions → Variables).
 
