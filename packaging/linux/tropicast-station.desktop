@@ -1,0 +1,9 @@
+[Desktop Entry]
+Type=Application
+Name=Tropicast Station
+Comment=Broadcast station audio to an Icecast-compatible server
+Exec=Tropicast.Station
+Icon=tropicast-station
+Terminal=false
+Categories=AudioVideo;Audio;
+StartupWMClass=Tropicast.Station

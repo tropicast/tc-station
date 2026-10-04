@@ -601,6 +601,14 @@ URLs, exceptions and edited log records; verify both file/console sinks,
 rolling bounds/private permissions, ZIP contents, real FFmpeg live-session
 password absence and the actual dispatcher error dialog/cleanup.
 
+## Packaging and releases
+
+Self-contained installers (Windows MSIX, Linux AppImage, macOS DMG for Apple
+Silicon and Intel) are built by `scripts/package-*.{ps1,sh}`, verified in CI and
+published as a draft GitHub Release when a `v*` tag is pushed. See
+[`docs/packaging.md`](docs/packaging.md) for formats, Linux prerequisites,
+signing secrets and the release procedure.
+
 ## Conventions
 
 - **MVVM** with [CommunityToolkit.Mvvm](https://learn.microsoft.com/dotnet/communitytoolkit/mvvm/).
