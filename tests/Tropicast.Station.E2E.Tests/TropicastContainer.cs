@@ -36,7 +36,8 @@ internal static class E2EEnvironment
 internal sealed class TropicastContainer : IAsyncDisposable
 {
     private readonly string _name = $"tc-e2e-{Guid.NewGuid():N}";
-    private bool _created;
+    private static readonly Lock PortLock = new();
+    private static readonly HashSet<int> HandedOutPorts = [];
 
     internal int Port { get; private set; }
     internal string SourcePassword { get; } = RandomNumberGenerator.GetHexString(32);
@@ -44,10 +45,23 @@ internal sealed class TropicastContainer : IAsyncDisposable
 
     internal static async Task<TropicastContainer> StartAsync(CancellationToken token)
     {
-        var container = new TropicastContainer { Port = FreePort() };
+        var container = new TropicastContainer();
         try
         {
-            await container.RunAsync(token);
+            // Another process can still take the port between FreePort and docker run; retry on a bind failure.
+            for (var attempt = 1; ; attempt++)
+            {
+                container.Port = FreePort();
+                try
+                {
+                    await container.RunAsync(token);
+                    break;
+                }
+                catch (IOException ex) when (attempt < 3 && ex.Message.Contains("port", StringComparison.OrdinalIgnoreCase))
+                {
+                    await container.RemoveAsync();
+                }
+            }
             await container.WaitReadyAsync(token);
             return container;
         }
@@ -58,16 +72,29 @@ internal sealed class TropicastContainer : IAsyncDisposable
         }
     }
 
+    /// <summary>
+    /// Returns a free loopback port never handed out before in this process, so tests running in
+    /// parallel cannot receive the same port (including the one reserved for the unreachable-host case).
+    /// </summary>
     internal static int FreePort()
     {
-        using var listener = new TcpListener(IPAddress.Loopback, 0);
-        listener.Start();
-        return ((IPEndPoint)listener.LocalEndpoint).Port;
+        lock (PortLock)
+        {
+            while (true)
+            {
+                using var listener = new TcpListener(IPAddress.Loopback, 0);
+                listener.Start();
+                var port = ((IPEndPoint)listener.LocalEndpoint).Port;
+                if (HandedOutPorts.Add(port))
+                {
+                    return port;
+                }
+            }
+        }
     }
 
     private async Task RunAsync(CancellationToken token)
     {
-        _created = true;
         await DockerAsync(token, "run", "-d", "--name", _name,
             "-p", $"127.0.0.1:{Port.ToString(CultureInfo.InvariantCulture)}:8000",
             "-e", $"ICECAST_SOURCE_PASSWORD={SourcePassword}",
@@ -161,11 +188,18 @@ internal sealed class TropicastContainer : IAsyncDisposable
         return await output + await error;
     }
 
-    public async ValueTask DisposeAsync()
+    /// <summary>Removes the container if it exists; a missing container must not hide the original failure.</summary>
+    private async Task RemoveAsync()
     {
-        if (_created)
+        try
         {
             await DockerAsync(CancellationToken.None, "rm", "-f", _name);
         }
+        catch (IOException)
+        {
+            // Nothing to clean up, or Docker is unavailable and the original error is more useful.
+        }
     }
+
+    public ValueTask DisposeAsync() => new(RemoveAsync());
 }
