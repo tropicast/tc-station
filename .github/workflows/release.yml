@@ -1,0 +1,174 @@
+name: Release
+
+# Push a tag such as v0.2.0 (or v0.2.0-rc.1) on a commit that is on main.
+# Builds signed (when secrets exist) packages for every platform and attaches them to a DRAFT GitHub Release.
+on:
+  push:
+    tags: ['v*']
+
+permissions:
+  contents: write
+
+env:
+  DOTNET_NOLOGO: true
+  DOTNET_CLI_TELEMETRY_OPTOUT: true
+  TC_REQUIRE_FFMPEG: "1"
+
+jobs:
+  verify:
+    name: Verify tag
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+      core: ${{ steps.version.outputs.core }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+      - name: Check tag format and branch
+        id: version
+        run: |
+          tag="${GITHUB_REF_NAME}"
+          if [[ ! "$tag" =~ ^v([0-9]+\.[0-9]+\.[0-9]+)(-[0-9A-Za-z.-]+)?$ ]]; then
+            echo "Tag '$tag' must look like v1.2.3 or v1.2.3-rc.1" >&2
+            exit 1
+          fi
+          git merge-base --is-ancestor "$GITHUB_SHA" origin/main || { echo "Tag $tag is not on main." >&2; exit 1; }
+          echo "version=${tag#v}" >> "$GITHUB_OUTPUT"
+          echo "core=${BASH_REMATCH[1]}" >> "$GITHUB_OUTPUT"
+
+  package:
+    name: Package (${{ matrix.os }})
+    needs: verify
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [windows-latest, ubuntu-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-dotnet@v6
+        with:
+          global-json-file: global.json
+
+      - name: Prepare Windows native toolchain
+        if: runner.os == 'Windows'
+        uses: msys2/setup-msys2@v2
+        with:
+          msystem: MINGW64
+          install: mingw-w64-x86_64-gcc mingw-w64-x86_64-pkgconf make perl curl tar diffutils
+
+      - name: Cache source-built FFmpeg bundles
+        id: ffmpeg-cache
+        uses: actions/cache@v5
+        with:
+          path: artifacts/ffmpeg/
+          key: ffmpeg-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('scripts/build-ffmpeg.sh', 'THIRD_PARTY_NOTICES') }}
+
+      - name: Build FFmpeg (Windows)
+        if: runner.os == 'Windows' && steps.ffmpeg-cache.outputs.cache-hit != 'true'
+        shell: msys2 {0}
+        run: bash scripts/build-ffmpeg.sh win-x64
+
+      - name: Build FFmpeg (Linux)
+        if: runner.os == 'Linux' && steps.ffmpeg-cache.outputs.cache-hit != 'true'
+        run: bash scripts/build-ffmpeg.sh linux-x64
+
+      - name: Build FFmpeg (macOS Apple Silicon and Intel)
+        if: runner.os == 'macOS' && steps.ffmpeg-cache.outputs.cache-hit != 'true'
+        run: |
+          bash scripts/build-ffmpeg.sh osx-arm64
+          bash scripts/build-ffmpeg.sh osx-x64
+
+      - name: Package (Linux AppImage)
+        if: runner.os == 'Linux'
+        env:
+          TC_VERSION: ${{ needs.verify.outputs.core }}
+        run: bash scripts/package-linux.sh
+
+      - name: Package (Windows MSIX)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        env:
+          WINDOWS_PFX_BASE64: ${{ secrets.WINDOWS_PFX_BASE64 }}
+          TC_WINDOWS_PFX_PASSWORD: ${{ secrets.WINDOWS_PFX_PASSWORD }}
+          TC_MSIX_PUBLISHER: ${{ secrets.WINDOWS_MSIX_PUBLISHER }}
+        run: |
+          if ($env:WINDOWS_PFX_BASE64) {
+            $pfx = Join-Path $env:RUNNER_TEMP 'tropicast-signing.pfx'
+            [IO.File]::WriteAllBytes($pfx, [Convert]::FromBase64String($env:WINDOWS_PFX_BASE64))
+            $env:TC_WINDOWS_PFX_PATH = $pfx
+          } else {
+            Write-Warning 'WINDOWS_PFX_BASE64 is not set: the MSIX will be UNSIGNED and not installable.'
+          }
+          ./scripts/package-windows.ps1 -Version '${{ needs.verify.outputs.core }}'
+          if ($env:TC_WINDOWS_PFX_PATH) { Remove-Item $env:TC_WINDOWS_PFX_PATH -Force }
+
+      - name: Import macOS signing certificate
+        if: runner.os == 'macOS'
+        env:
+          MACOS_CERTIFICATE_BASE64: ${{ secrets.MACOS_CERTIFICATE_BASE64 }}
+          MACOS_CERTIFICATE_PASSWORD: ${{ secrets.MACOS_CERTIFICATE_PASSWORD }}
+          MACOS_SIGNING_IDENTITY: ${{ secrets.MACOS_SIGNING_IDENTITY }}
+        run: |
+          if [[ -z "$MACOS_CERTIFICATE_BASE64" || -z "$MACOS_SIGNING_IDENTITY" ]]; then
+            echo "::warning::macOS signing secrets are not set: images will be ad-hoc signed and NOT notarized."
+            exit 0
+          fi
+          keychain="$RUNNER_TEMP/tc-release.keychain-db"
+          keychain_password="$(uuidgen)"
+          echo "::add-mask::$keychain_password"
+          printf '%s' "$MACOS_CERTIFICATE_BASE64" | base64 --decode > "$RUNNER_TEMP/tc-cert.p12"
+          security create-keychain -p "$keychain_password" "$keychain"
+          security set-keychain-settings -lut 21600 "$keychain"
+          security unlock-keychain -p "$keychain_password" "$keychain"
+          security import "$RUNNER_TEMP/tc-cert.p12" -P "$MACOS_CERTIFICATE_PASSWORD" -A -t cert -f pkcs12 -k "$keychain"
+          security set-key-partition-list -S apple-tool:,apple: -k "$keychain_password" "$keychain"
+          security list-keychains -d user -s "$keychain" login.keychain-db
+          rm -f "$RUNNER_TEMP/tc-cert.p12"
+          echo "TC_CODESIGN_IDENTITY=$MACOS_SIGNING_IDENTITY" >> "$GITHUB_ENV"
+
+      - name: Package (macOS disk images)
+        if: runner.os == 'macOS'
+        env:
+          TC_VERSION: ${{ needs.verify.outputs.core }}
+          TC_NOTARY_APPLE_ID: ${{ secrets.APPLE_ID }}
+          TC_NOTARY_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+          TC_NOTARY_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
+        run: |
+          bash scripts/package-macos.sh osx-arm64
+          bash scripts/package-macos.sh osx-x64
+
+      - uses: actions/upload-artifact@v7
+        with:
+          name: packages-${{ matrix.os }}
+          path: |
+            artifacts/package/*.AppImage
+            artifacts/package/*.dmg
+            artifacts/package/*.msix
+          if-no-files-found: error
+
+  publish:
+    name: Draft GitHub Release
+    needs: [verify, package]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v8
+        with:
+          path: dist
+          pattern: packages-*
+          merge-multiple: true
+      - name: Create draft release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          VERSION: ${{ needs.verify.outputs.version }}
+        run: |
+          cd dist
+          sha256sum * > SHA256SUMS.txt
+          prerelease=()
+          if [[ "$VERSION" == *-* ]]; then prerelease=(--prerelease); fi
+          gh release create "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" --draft "${prerelease[@]}" \
+            --title "Tropicast Station $VERSION" \
+            --notes "Review before publishing: confirm each package is signed (see docs/packaging.md). Builds without signing secrets are unsigned/ad-hoc signed." \
+            ./*

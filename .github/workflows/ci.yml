@@ -139,15 +139,69 @@ jobs:
           path: TestResults/
           if-no-files-found: ignore
 
-      - name: Build macOS app bundles (Apple Silicon and Intel)
+      - name: Package macOS disk images (Apple Silicon and Intel, ad-hoc signed)
         if: runner.os == 'macOS'
         run: |
-          bash scripts/build-macos.sh osx-arm64
-          bash scripts/build-macos.sh osx-x64
+          bash scripts/package-macos.sh osx-arm64
+          bash scripts/package-macos.sh osx-x64
           lipo src/Tropicast.Station.Audio.MacOS/obj/native/libtropicast_audio.dylib -verify_arch arm64 x86_64
           for rid in osx-arm64 osx-x64; do
             bundle="artifacts/$rid/Tropicast Station.app"
             test -f "$bundle/Contents/MacOS/libtropicast_audio.dylib"
             test -x "$bundle/Contents/MacOS/Tropicast.Station"
             test -x "$bundle/Contents/MacOS/ffmpeg/ffmpeg"
+            test -f "$bundle/Contents/Resources/tropicast.icns"
+            image="artifacts/package/Tropicast-Station-0.1.0-$rid.dmg"
+            mount="$RUNNER_TEMP/tc-dmg-$rid"
+            mkdir -p "$mount"
+            hdiutil attach "$image" -mountpoint "$mount" -nobrowse -readonly
+            test -x "$mount/Tropicast Station.app/Contents/MacOS/Tropicast.Station"
+            test -f "$mount/THIRD_PARTY_NOTICES.txt"
+            codesign --verify --deep --strict "$mount/Tropicast Station.app"
+            hdiutil detach "$mount"
           done
+
+      - name: Package and install-test MSIX (Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          ./scripts/package-windows.ps1 -Version 0.1.0 -TestSign
+          Import-Certificate -FilePath artifacts/package/tropicast-test-signing.cer -CertStoreLocation Cert:\LocalMachine\TrustedPeople | Out-Null
+          Add-AppxPackage artifacts/package/Tropicast-Station-0.1.0-win-x64.msix
+          $pkg = Get-AppxPackage Tropicast.Station
+          if (-not $pkg) { throw 'The MSIX did not install.' }
+          foreach ($file in 'Tropicast.Station.exe', 'ffmpeg\ffmpeg.exe', 'ffmpeg\THIRD_PARTY_NOTICES', 'THIRD_PARTY_NOTICES') {
+            if (-not (Test-Path (Join-Path $pkg.InstallLocation $file))) { throw "Installed package is missing $file." }
+          }
+          Start-Process "shell:AppsFolder\$($pkg.PackageFamilyName)!TropicastStation"
+          Start-Sleep -Seconds 15
+          $app = Get-Process -Name Tropicast.Station -ErrorAction SilentlyContinue
+          if (-not $app) { throw 'The installed app did not stay running.' }
+          $app | Stop-Process -Force
+          Remove-AppxPackage $pkg.PackageFullName
+
+      - name: Package and smoke-test AppImage (Linux)
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get install -y -qq xvfb
+          bash scripts/package-linux.sh
+          image="$PWD/artifacts/package/Tropicast-Station-0.1.0-x86_64.AppImage"
+          xvfb-run -a "$image" --appimage-extract-and-run > "$RUNNER_TEMP/tc-appimage.log" 2>&1 &
+          for attempt in {1..30}; do
+            if pgrep -f 'usr/bin/Tropicast.Station$' > /dev/null; then break; fi
+            sleep 1
+          done
+          sleep 10
+          pgrep -f 'usr/bin/Tropicast.Station$' > /dev/null || { cat "$RUNNER_TEMP/tc-appimage.log"; exit 1; }
+          pkill -f 'usr/bin/Tropicast.Station$'
+
+      - name: Upload packages
+        uses: actions/upload-artifact@v7
+        with:
+          name: packages-${{ matrix.os }}
+          path: |
+            artifacts/package/*.AppImage
+            artifacts/package/*.dmg
+            artifacts/package/*.msix
+          retention-days: 7
+          if-no-files-found: error
