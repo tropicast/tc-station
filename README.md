@@ -1,31 +1,16 @@
 # Tropicast Station
 
-Cross-platform desktop broadcaster for Tropicast radio stations, built with
-[Avalonia](https://avaloniaui.net/) on .NET 10. It captures station audio
-(microphone, mixer or application output), encodes it and streams it live to
-an Icecast mount.
+Cross-platform desktop broadcaster for Tropicast radio stations, built with [Avalonia](https://avaloniaui.net/) on .NET 10. Captures station audio (mic, mixer or app output), encodes, streams live to Icecast mount.
 
-> Status: desktop scaffold, manual connection profiles, and shared audio
-> capture/device-picker pipeline, Windows WASAPI, Linux PulseAudio/PipeWire and
-> macOS Core Audio/ScreenCaptureKit adapters and supervised FFmpeg/Icecast
-> publishing backend, Go Live workflow, audio meters and automatic reconnect
-> per-profile stream quality/metadata and safe diagnostics (issues #2–#13). Remaining features
-> are tracked in the MVP epic, #1.
+> Status: desktop scaffold, manual connection profiles, shared audio capture/device-picker pipeline, Windows WASAPI, Linux PulseAudio/PipeWire, macOS Core Audio/ScreenCaptureKit adapters, supervised FFmpeg/Icecast publishing backend, Go Live workflow, audio meters, auto reconnect, per-profile stream quality/metadata, safe diagnostics (issues #2–#13). Remaining features tracked in MVP epic, #1.
 
 ## Prerequisites
 
 - [.NET 10 SDK](https://dotnet.microsoft.com/download/dotnet/10.0) (pinned by `global.json`)
 - Windows 10+, Linux with X11 or Wayland (XWayland), or macOS 13+
-- Linux credentials require **libsecret's `secret-tool`** (`libsecret-tools` on
-  Debian/Ubuntu, `libsecret` on Arch) and an unlocked Secret Service keyring,
-  such as GNOME Keyring. There is no plaintext fallback.
-- Linux audio requires **`pactl` and `parec`** (`pulseaudio-utils` on
-  Debian/Ubuntu, `libpulse` on Arch), plus a running PulseAudio server or
-  PipeWire with **`pipewire-pulse`**. Use a recent `pactl` supporting JSON output
-  (PulseAudio 15+). No root access is required for capture.
-- Building native macOS capture requires **Xcode Command Line Tools**
-  (`xcode-select --install`). No third-party audio library is required.
-  Run the `.app` bundle described below for privacy permission requests.
+- Linux credentials need **libsecret's `secret-tool`** (`libsecret-tools` on Debian/Ubuntu, `libsecret` on Arch) + unlocked Secret Service keyring (e.g. GNOME Keyring). No plaintext fallback.
+- Linux audio needs **`pactl` and `parec`** (`pulseaudio-utils` on Debian/Ubuntu, `libpulse` on Arch) + running PulseAudio server or PipeWire with **`pipewire-pulse`**. Use recent `pactl` with JSON output (PulseAudio 15+). No root needed for capture.
+- Native macOS capture build needs **Xcode Command Line Tools** (`xcode-select --install`). No third-party audio lib. Run `.app` bundle (below) for privacy permission requests.
 
 ## Build, test and run
 
@@ -35,155 +20,80 @@ dotnet test
 dotnet run --project src/Tropicast.Station.App
 ```
 
-For an optimized build, use `-c Release`. Debug builds enable Avalonia
-Developer Tools (F12).
+Optimized build: `-c Release`. Debug builds enable Avalonia Developer Tools (F12).
 
-For encoding, build the pinned native bundle first (C compiler, make, Perl,
-pkg-config, curl, tar and an xz-capable tar are required):
+For encoding, build pinned native bundle first (needs C compiler, make, Perl, pkg-config, curl, tar, xz-capable tar):
 
 ```bash
 bash scripts/build-ffmpeg.sh linux-x64  # or linux-arm64, osx-arm64, osx-x64
 dotnet build -c Release
 ```
 
-On Windows, run `bash scripts/build-ffmpeg.sh win-x64` from an MSYS2 **MINGW64**
-shell with MinGW GCC/pkgconf, make, Perl, curl and tar installed. The script
-builds only FFmpeg/LAME and Linux OpenSSL, not the .NET app. Native Linux builds
-use the build host's libc baseline; build release bundles on the oldest
-supported distribution. Linux arm64 is a native build, not an x64 cross-build.
-macOS builds can target either CPU architecture and require Xcode tools.
-Sources are checksum-pinned; intermediate outputs stay under ignored `artifacts/`.
+Windows: run `bash scripts/build-ffmpeg.sh win-x64` from MSYS2 **MINGW64** shell with MinGW GCC/pkgconf, make, Perl, curl, tar. Script builds only FFmpeg/LAME + Linux OpenSSL, not .NET app. Native Linux builds use build host's libc baseline; build release bundles on oldest supported distro. Linux arm64 = native build, not x64 cross-build. macOS builds target either CPU arch, need Xcode tools. Sources checksum-pinned; intermediate outputs under ignored `artifacts/`.
 
 ## Solution layout
 
 | Project | Responsibility |
 |---|---|
 | `src/Tropicast.Station.App` | Avalonia UI (views, view models), composition root (`AppHost`) |
-| `src/Tropicast.Station.Core` | Domain model and shared services; no UI or platform dependencies |
-| `src/Tropicast.Station.Audio` | Audio capture abstractions and platform adapters |
-| `src/Tropicast.Station.Audio.Windows` | WASAPI shared-mode input and render-endpoint loopback via NAudio |
-| `src/Tropicast.Station.Audio.Linux` | PulseAudio/pipewire-pulse sources and sink monitors via libpulse clients |
-| `src/Tropicast.Station.Audio.MacOS` | Core Audio input and ScreenCaptureKit system audio via a native Apple-framework bridge |
-| `src/Tropicast.Station.Encoding` | Bounded float32→MP3 FFmpeg child and credential-safe Icecast publisher |
-| `src/Tropicast.Station.Infrastructure` | JSON profiles, OS credential stores and Icecast connection testing |
-| `tests/Tropicast.Station.Core.Tests` | Unit tests for the class libraries |
+| `src/Tropicast.Station.Core` | Domain model + shared services; no UI/platform deps |
+| `src/Tropicast.Station.Audio` | Audio capture abstractions + platform adapters |
+| `src/Tropicast.Station.Audio.Windows` | WASAPI shared-mode input + render-endpoint loopback via NAudio |
+| `src/Tropicast.Station.Audio.Linux` | PulseAudio/pipewire-pulse sources + sink monitors via libpulse clients |
+| `src/Tropicast.Station.Audio.MacOS` | Core Audio input + ScreenCaptureKit system audio via native Apple-framework bridge |
+| `src/Tropicast.Station.Encoding` | Bounded float32→MP3 FFmpeg child + credential-safe Icecast publisher |
+| `src/Tropicast.Station.Infrastructure` | JSON profiles, OS credential stores, Icecast connection testing |
+| `tests/Tropicast.Station.Core.Tests` | Unit tests for class libs |
 | `tests/Tropicast.Station.App.Tests` | Headless Avalonia UI tests |
-| `tests/Tropicast.Station.Audio.Tests` | PCM conversion, synthetic capture and hot-plug lifecycle tests |
-| `tests/Tropicast.Station.Audio.Windows.Tests` | Windows adapter queue/lifecycle tests and opt-in hardware qualification |
-| `tests/Tropicast.Station.Audio.Linux.Tests` | Linux parser/session tests and opt-in synthetic native capture integration |
-| `tests/Tropicast.Station.Audio.MacOS.Tests` | macOS adapter lifecycle/permission tests and native enumeration smoke test |
-| `tests/Tropicast.Station.Encoding.Tests` | Encoder settings, real bundled codec/lifecycle tests and opt-in Icecast listener POC |
-| `tests/Tropicast.Station.Infrastructure.Tests` | Persistence, source handshake and native credential-store tests |
+| `tests/Tropicast.Station.Audio.Tests` | PCM conversion, synthetic capture, hot-plug lifecycle tests |
+| `tests/Tropicast.Station.Audio.Windows.Tests` | Windows adapter queue/lifecycle tests + opt-in hardware qualification |
+| `tests/Tropicast.Station.Audio.Linux.Tests` | Linux parser/session tests + opt-in synthetic native capture integration |
+| `tests/Tropicast.Station.Audio.MacOS.Tests` | macOS adapter lifecycle/permission tests + native enumeration smoke test |
+| `tests/Tropicast.Station.Encoding.Tests` | Encoder settings, real bundled codec/lifecycle tests, opt-in Icecast listener POC |
+| `tests/Tropicast.Station.Infrastructure.Tests` | Persistence, source handshake, native credential-store tests |
 
-Dependencies point inward: `App` → `Audio` / `Encoding` / `Infrastructure` → `Core`.
+Deps point inward: `App` → `Audio` / `Encoding` / `Infrastructure` → `Core`.
 
 ## Audio sources and preview
 
-The **Audio source** tab groups available devices into **Microphones / inputs**
-and **Application / system output**. Choose one device, the encoder sample rate
-(44.1 or 48 kHz) and mono/stereo, then **Start preview**. This consumes captured
-PCM through the shared conversion pipeline; it does not play audio, encode it,
-or publish to Icecast. Levels and broadcasting controls are separate MVP issues.
+**Audio source** tab groups devices into **Microphones / inputs** and **Application / system output**. Pick one device, encoder sample rate (44.1 or 48 kHz), mono/stereo, then **Start preview**. Consumes captured PCM through shared conversion pipeline; no playback, encoding, or Icecast publish. Levels + broadcast controls = separate MVP issues.
 
-On Windows, the normal app lists active WASAPI inputs and playback devices
-(loopback sources). On Linux, it lists PulseAudio/PipeWire inputs and sink
-monitor sources. On macOS, it lists Core Audio inputs (including virtual inputs)
-and a ScreenCaptureKit **System audio** source.
-Run the synthetic adapter on any OS for demos:
+Windows: lists active WASAPI inputs + playback devices (loopback sources). Linux: PulseAudio/PipeWire inputs + sink monitor sources. macOS: Core Audio inputs (incl. virtual) + ScreenCaptureKit **System audio** source.
+Run synthetic adapter on any OS for demos:
 
 ```bash
 dotnet run --project src/Tropicast.Station.App -- --demo-audio
 ```
 
-Demo mode supplies a 440 Hz, 44.1 kHz mono signed-16 input and a 660 Hz, 48 kHz
-stereo float32 loopback source, both clearly labelled **Demo**. These are generated
-tones, not recordings of microphones or application audio.
+Demo mode supplies 440 Hz, 44.1 kHz mono signed-16 input + 660 Hz, 48 kHz stereo float32 loopback source, both labelled **Demo**. Generated tones, not mic/app recordings.
 
 ### Adapter contract and pipeline
 
-`IAudioCaptureProvider` exposes enumeration, `DevicesChanged` notifications and
-`StartAsync`. An `AudioDevice` carries a stable ID, display name, kind, default
-flag and native `AudioFormat`. `IAudioCaptureSession` delivers interleaved
-little-endian signed16 or float32 PCM through a single-consumer async stream.
-Each `PcmFrame` owns its buffer; adapters must not reuse that memory. Stop,
-disposal and reader cancellation must unblock capture and be safe to call
-concurrently/repeatedly. Bounded native queues must report overruns, not silently
-discard audio. Device loss throws `IOException`.
+`IAudioCaptureProvider` exposes enumeration, `DevicesChanged` notifications, `StartAsync`. `AudioDevice` carries stable ID, display name, kind, default flag, native `AudioFormat`. `IAudioCaptureSession` delivers interleaved little-endian signed16 or float32 PCM via single-consumer async stream. Each `PcmFrame` owns its buffer; adapters must not reuse memory. Stop, dispose, reader cancel must unblock capture, safe concurrently/repeatedly. Bounded native queues must report overruns, not silently drop audio. Device loss throws `IOException`.
 
-`AudioCaptureService` serializes lifecycle/device refreshes, cancels and disposes
-capture on removal or native-format changes, and emits a visible error without
-switching to another device. Idle hot-plug/default-device changes refresh the
-picker automatically. The selected device is preserved by ID on renames.
-The Windows WASAPI and Linux PulseAudio adapters are registered before the
-shared audio services; the macOS Core Audio adapter follows the same pattern.
-Use `TryAdd` registration so an explicitly registered adapter is not overwritten.
+`AudioCaptureService` serializes lifecycle/device refreshes, cancels + disposes capture on removal or native-format change, emits visible error without switching device. Idle hot-plug/default-device changes auto-refresh picker. Selected device preserved by ID on rename. Windows WASAPI + Linux PulseAudio adapters registered before shared audio services; macOS Core Audio adapter same pattern. Use `TryAdd` registration so explicitly registered adapter not overwritten.
 
-`PcmConverter` produces float32 mono/stereo PCM for the future encoder using
-a streaming windowed-sinc low-pass resampler with 32 input-frame lookahead
-(about 0.73 ms at 44.1 kHz). Mono is duplicated to stereo; stereo is averaged
-to mono. With more channels, mono averages all channels and stereo averages
-alternating channel indices. This is deliberately **not** a speaker-layout-aware
-surround downmix. No gain/limiting is applied. Conversion state carries across
-chunks; `Flush()` drains a finite source, while device-loss/stop discards the
-tail. Invalid PCM alignment, non-finite float samples or midstream format
-changes produce explicit errors.
+`PcmConverter` produces float32 mono/stereo PCM for future encoder via streaming windowed-sinc low-pass resampler, 32 input-frame lookahead (~0.73 ms at 44.1 kHz). Mono duplicated to stereo; stereo averaged to mono. More channels: mono averages all; stereo averages alternating channel indices. Deliberately **not** speaker-layout-aware surround downmix. No gain/limiting. Conversion state carries across chunks; `Flush()` drains finite source, device-loss/stop discards tail. Invalid PCM alignment, non-finite float samples, midstream format changes → explicit errors.
 
-`AudioCaptureService.FrameAvailable` is the future encoder integration point:
-frames are already in the requested format. Subscribers run on the capture
-thread and must neither block nor throw. Marshal UI work to the UI dispatcher;
-keep any encoder handoff bounded and report overloads. `ToneAudioCaptureProvider`
-also exposes `SetDevices` for deterministic hot-plug tests and demos.
+`AudioCaptureService.FrameAvailable` = future encoder integration point: frames already in requested format. Subscribers run on capture thread, must not block or throw. Marshal UI work to UI dispatcher; keep encoder handoff bounded, report overloads. `ToneAudioCaptureProvider` also exposes `SetDevices` for deterministic hot-plug tests/demos.
 
 ### Windows WASAPI capture
 
-The app automatically selects `WindowsAudioCaptureProvider` on Windows unless
-`--demo-audio` is passed. Active capture endpoints (including USB mixer/interface
-inputs) and render endpoints are listed separately; the Windows **Multimedia**
-default is labelled. Capture targets an explicit endpoint ID and never silently
-follows a different default. Add/remove/state/default/property notifications
-trigger refresh through `IMMNotificationClient`. Removing an active endpoint
-stops capture and shows guidance; replugging it refreshes the picker.
+App auto-selects `WindowsAudioCaptureProvider` on Windows unless `--demo-audio` passed. Active capture endpoints (incl. USB mixer/interface inputs) and render endpoints listed separately; Windows **Multimedia** default labelled. Capture targets explicit endpoint ID, never silently follows different default. Add/remove/state/default/property notifications trigger refresh via `IMMNotificationClient`. Removing active endpoint stops capture + shows guidance; replug refreshes picker.
 
-Render-endpoint loopback captures **all audio played through that endpoint**,
-not a single application/process. Choose the endpoint used by your audio player.
-WASAPI may deliver no packets while a render endpoint is idle; this adapter
-does not invent silence or play a keepalive tone. Continuous loopback audio
-requires an actively playing source.
+Render-endpoint loopback captures **all audio played through that endpoint**, not single app/process. Pick endpoint your player uses. WASAPI may deliver no packets while render endpoint idle; adapter doesn't invent silence or play keepalive tone. Continuous loopback needs actively playing source.
 
-Capture uses WASAPI **shared mode**, with 100 ms native buffers and worker-thread
-initialization (no captured UI synchronization context). PCM16 and float32 mix
-formats are preserved. PCM24/PCM32 mix formats request float32 using WASAPI's
-shared-mode conversion, preserving the endpoint's sample rate/channel count.
-The device format in the picker therefore describes the PCM supplied by the
-adapter, not necessarily the physical interface bit depth. The common
-`PcmConverter` handles conversion to the chosen encoder format. Non-PCM formats
-and rates/channel counts outside the shared contract are rejected explicitly.
+Capture uses WASAPI **shared mode**, 100 ms native buffers, worker-thread init (no captured UI sync context). PCM16 + float32 mix formats preserved. PCM24/PCM32 mix formats request float32 via WASAPI shared-mode conversion, keeping endpoint rate/channel count. Picker format therefore = PCM supplied by adapter, not necessarily physical bit depth. Common `PcmConverter` converts to chosen encoder format. Non-PCM formats + rates/channel counts outside shared contract rejected explicitly.
 
-NAudio callback buffers are copied before reuse. A bounded queue (256 packets,
-maximum two seconds of PCM by byte budget) fails explicitly on overruns rather
-than silently dropping data. Capture errors and device invalidation close the
-stream; cancellation/stop unblocks readers, and disposal joins the native
-capture thread on a worker before releasing its endpoint.
+NAudio callback buffers copied before reuse. Bounded queue (256 packets, max 2 s PCM by byte budget) fails explicitly on overrun, no silent drop. Capture errors + device invalidation close stream; cancel/stop unblocks readers; dispose joins native capture thread on worker before releasing endpoint.
 
-If Windows denies microphone access, the app displays the settings path:
-**Settings → Privacy & security → Microphone** (Windows 10:
-**Settings → Privacy → Microphone**). Enable **Microphone access** and
-**Let desktop apps access your microphone**. The adapter checks explicit
-Windows microphone-consent denials as a preflight hint, then treats WASAPI
-access-denied errors as authoritative. Loopback is not blocked by a
-microphone-only denial. Exclusive-device use, stopped Windows Audio service,
-unsupported format and invalidation have separate guidance.
+If Windows denies mic access, app shows settings path: **Settings → Privacy & security → Microphone** (Windows 10: **Settings → Privacy → Microphone**). Enable **Microphone access** and **Let desktop apps access your microphone**. Adapter checks explicit Windows mic-consent denials as preflight hint, then treats WASAPI access-denied as authoritative. Loopback not blocked by mic-only denial. Exclusive-device use, stopped Windows Audio service, unsupported format, invalidation have separate guidance.
 
 ### Windows hardware qualification (not exercised by hosted CI)
 
-Hosted CI runs the adapter with an injected fake native backend: it cannot
-verify USB interfaces or audible glitches. On a Windows station, use the app
-without `--demo-audio` to check an actual mic/interface and playback endpoint.
-For a sustained qualification, feed continuous audio into the input and play
-continuous audio through the loopback endpoint for the entire test.
+Hosted CI runs adapter with injected fake native backend: can't verify USB interfaces or audible glitches. On Windows station, run app without `--demo-audio` to check real mic/interface + playback endpoint. For sustained qualification, feed continuous audio into input and play continuous audio through loopback endpoint for whole test.
 
-Set the endpoint IDs (shown in test output; also exposed by `GetDevicesAsync`)
-and run the opt-in test in PowerShell:
+Set endpoint IDs (shown in test output; also exposed by `GetDevicesAsync`), run opt-in test in PowerShell:
 
 ```powershell
 $env:TC_TEST_WASAPI = "1"
@@ -194,461 +104,177 @@ dotnet test tests/Tropicast.Station.Audio.Windows.Tests -c Release `
   --filter FullyQualifiedName~WindowsHardwareTests --logger "console;verbosity=detailed"
 ```
 
-The test captures each endpoint for 30 minutes (one hour total), requires at
-least 98% of the expected PCM frame count, and fails on malformed packets,
-capture errors or queue overruns. It is a continuity check, **not proof that
-the result is glitch-free**: listen to or analyze an encoded recording during
-station qualification once the encoder is integrated (#8). Publishing a
-broadcast is not available yet.
+Test captures each endpoint 30 min (1 h total), requires ≥98% expected PCM frame count, fails on malformed packets, capture errors, queue overruns. Continuity check, **not proof that the result is glitch-free**: listen to/analyze encoded recording during station qualification once encoder integrated (#8). Broadcast publishing not available yet.
 
-NAudio.Wasapi/NAudio.Core 2.4.0 are MIT-licensed; package license metadata and
-upstream attribution are available at <https://github.com/naudio/NAudio>.
+NAudio.Wasapi/NAudio.Core 2.4.0 MIT-licensed; package license metadata + upstream attribution at <https://github.com/naudio/NAudio>.
 
 ### Linux PulseAudio / PipeWire capture
 
-The app automatically selects `LinuxAudioCaptureProvider` on Linux unless
-`--demo-audio` is passed. It supervises `pactl` (JSON enumeration and topology
-subscription) and `parec` (raw PCM capture), both libpulse clients. This uses
-the same PulseAudio protocol on PulseAudio and on PipeWire's `pipewire-pulse`
-compatibility server; no shell commands or device-name interpolation are used.
+App auto-selects `LinuxAudioCaptureProvider` on Linux unless `--demo-audio` passed. Supervises `pactl` (JSON enumeration + topology subscription) and `parec` (raw PCM capture), both libpulse clients. Same PulseAudio protocol on PulseAudio and PipeWire's `pipewire-pulse` compat server; no shell commands or device-name interpolation.
 
-Microphones and mixer/interface sources appear under inputs. Sink **monitor**
-sources appear under system output: choose the monitor of the output used by
-your player. A monitor captures the whole sink, not one application. Route the
-player to a dedicated sink for application-only capture. Suspended/idle sources
-remain selectable; recording starts only when you click **Start preview**.
+Mics + mixer/interface sources under inputs. Sink **monitor** sources under system output: pick monitor of output your player uses. Monitor captures whole sink, not one app. Route player to dedicated sink for app-only capture. Suspended/idle sources stay selectable; recording starts only on **Start preview**.
 
-Default source and sink changes refresh their respective default labels
-automatically. Selection stays pinned to an explicit source name, rather than
-silently following a new default. `stream.dont-move=true` prevents automatic
-fallback when the selected endpoint disappears. Device removal or native format
-changes stop preview with an error; replugging updates the picker. Audio-server
-or subscription failures are visible, and notifications reconnect every two
-seconds. Missing packages, server access failures and capture failures report
-guidance rather than returning an empty success.
+Default source/sink changes auto-refresh default labels. Selection pinned to explicit source name, not silently following new default. `stream.dont-move=true` prevents auto fallback when selected endpoint vanishes. Device removal or native format change stops preview with error; replug updates picker. Audio-server/subscription failures visible; notifications reconnect every 2 s. Missing packages, server access failures, capture failures report guidance, not empty success.
 
-`parec` supplies float32 little-endian PCM at the source's advertised rate and
-channel count (libpulse converts its original encoding). The shared converter
-handles the encoder target format. Capture requests 40 ms server latency and
-20 ms processing; actual latency depends on the server. Owned 20 ms packets
-enter a bounded 100-packet queue (approximately two seconds); overload fails
-explicitly. Stop/cancellation terminates the owned child and disposal reaps it;
-shutdown also terminates the topology subscription.
+`parec` supplies float32 LE PCM at source's advertised rate + channel count (libpulse converts original encoding). Shared converter handles encoder target format. Capture requests 40 ms server latency + 20 ms processing; actual latency server-dependent. Owned 20 ms packets enter bounded 100-packet queue (~2 s); overload fails explicitly. Stop/cancel terminates owned child, dispose reaps it; shutdown also terminates topology subscription.
 
-Run the synthetic native integration test on a running audio server:
+Run synthetic native integration test on running audio server:
 
 ```bash
 TC_TEST_PULSE=1 dotnet test tests/Tropicast.Station.Audio.Linux.Tests -c Release
 ```
 
-The test additionally needs `pacat` (in the same utils/libpulse package).
-It creates a uniquely named null sink and remapped input, plays only a generated
-600 Hz tone into that sink, checks input/monitor signal and stop/restart,
-then removes its sources and checks automatic capture shutdown. It does not
-record personal microphones or change desktop default devices, and removes its
-modules/child processes afterwards. CI runs it against an isolated PulseAudio
-server; `TC_TEST_PULSE_DEFAULTS=1` additionally checks default changes and must
-only be enabled on an isolated server. PipeWire capture is also exercised
-locally. Real USB/mixer hardware and sustained audible-glitch qualification
-remain station-side checks; these synthetic tests do not prove those.
+Test also needs `pacat` (same utils/libpulse package). Creates uniquely named null sink + remapped input, plays only generated 600 Hz tone into sink, checks input/monitor signal + stop/restart, then removes sources and checks auto capture shutdown. Doesn't record personal mics or change desktop defaults; removes its modules/child processes after. CI runs against isolated PulseAudio server; `TC_TEST_PULSE_DEFAULTS=1` also checks default changes — enable only on isolated server. PipeWire capture also exercised locally. Real USB/mixer hardware + sustained audible-glitch qualification remain station-side; synthetic tests don't prove those.
 
-Audio preview remains local-only. Use **Go Live** in the Broadcast tab to
-publish the selected source through the encoding backend.
+Audio preview stays local-only. Use **Go Live** in Broadcast tab to publish selected source via encoding backend.
 
 ### macOS Core Audio / system audio capture
 
-Build the app bundle **on a Mac**, then launch it instead of `dotnet run` for
-native capture. Use `osx-arm64` on Apple Silicon or `osx-x64` on Intel:
+Build app bundle **on a Mac**, launch it instead of `dotnet run` for native capture. `osx-arm64` on Apple Silicon, `osx-x64` on Intel:
 
 ```bash
 bash scripts/build-macos.sh osx-arm64
 open "artifacts/osx-arm64/Tropicast Station.app"
 ```
 
-The script publishes a self-contained .NET app and ad-hoc signs the bundle.
-The native Objective-C bridge is universal (arm64/x86_64); CI compiles it and
-builds both application architectures. The bundle includes microphone and
-screen/system-audio usage descriptions. Unbundled execution refuses permission
-requests with guidance rather than letting macOS terminate a process missing
-its privacy declarations. Ad-hoc builds are for development, not distribution;
-stable developer signing/notarization is part of packaging (#14), and rebuilding
-may require reauthorizing privacy permissions.
+Script publishes self-contained .NET app + ad-hoc signs bundle. Native Objective-C bridge universal (arm64/x86_64); CI compiles it + builds both app archs. Bundle includes mic + screen/system-audio usage descriptions. Unbundled execution refuses permission requests with guidance rather than letting macOS kill process missing privacy declarations. Ad-hoc builds = dev, not distribution; stable dev signing/notarization part of packaging (#14); rebuild may need reauthorizing privacy permissions.
 
-Core Audio enumerates live input devices by persistent device UID, native rate
-and input channel count. This includes built-in microphones, USB interfaces and
-virtual inputs. An Audio Queue records interleaved float32 at that rate/channel
-count; Core Audio converts the hardware encoding. Device/default/format changes
-are polled every two seconds. Default changes update labels but never change
-the selected source. Device removal or format changes stop capture with an
-error instead of switching to another mic.
+Core Audio enumerates live input devices by persistent device UID, native rate, input channel count. Includes built-in mics, USB interfaces, virtual inputs. Audio Queue records interleaved float32 at that rate/channel count; Core Audio converts hardware encoding. Device/default/format changes polled every 2 s. Default changes update labels, never change selected source. Device removal or format change stops capture with error instead of switching mic.
 
-**Start preview** requests microphone access only for input capture. If denied,
-enable **Tropicast Station** under **System Settings → Privacy & Security →
-Microphone**, then restart the app. No audio is recorded during enumeration.
-The OS permission dialog must be answered before a pending start completes.
+**Start preview** requests mic access only for input capture. If denied, enable **Tropicast Station** under **System Settings → Privacy & Security → Microphone**, restart app. No audio recorded during enumeration. OS permission dialog must be answered before pending start completes.
 
-The **System audio (ScreenCaptureKit)** source captures whole-system playback
-at 48 kHz stereo on macOS 13+, excluding this application's own playback.
-It requires Screen Recording permission on macOS 13; newer macOS versions
-label this **Screen & System Audio Recording**. macOS may prompt for access;
-if capture fails, enable Tropicast Station there and restart. A display must
-be available. No screen output callback is registered, and no screen images
-are retained, displayed, encoded or broadcast. This is whole-system capture,
-not per-application selection or a separate loopback source for each output.
-Idle output may provide no samples.
+**System audio (ScreenCaptureKit)** source captures whole-system playback at 48 kHz stereo on macOS 13+, excluding this app's own playback. Needs Screen Recording permission on macOS 13; newer macOS labels it **Screen & System Audio Recording**. macOS may prompt; if capture fails, enable Tropicast Station there + restart. Display must be available. No screen output callback registered; no screen images retained, displayed, encoded or broadcast. Whole-system capture, not per-app selection or separate loopback per output. Idle output may give no samples.
 
-For headless use, unavailable/denied system capture, or application-only routing,
-use a virtual input such as [BlackHole](https://github.com/ExistentialAudio/BlackHole).
-After installing its driver, route your player's output to BlackHole and select
-the **BlackHole input** in Tropicast. To hear it locally too, create a Multi-Output
-Device in Audio MIDI Setup combining BlackHole and your speakers; match sample
-rates and configure drift correction there. Tropicast does not install drivers,
-alter output routing or mix the microphone with system audio automatically.
-Virtual inputs still require microphone permission.
+For headless use, unavailable/denied system capture, or app-only routing, use virtual input like [BlackHole](https://github.com/ExistentialAudio/BlackHole). After installing driver, route player output to BlackHole, select **BlackHole input** in Tropicast. To also hear locally, create Multi-Output Device in Audio MIDI Setup combining BlackHole + speakers; match sample rates, configure drift correction there. Tropicast doesn't install drivers, alter output routing, or auto-mix mic with system audio. Virtual inputs still need mic permission.
 
-Native callbacks are copied into owned PCM packets. A bounded queue (256 packets,
-maximum two seconds by byte budget) reports overload instead of dropping samples.
-System audio's planar float buffers are interleaved before entering the shared
-converter. Stop/cancellation closes the reader immediately and releases native
-capture on a worker; disposal drains callbacks before managed delegates are
-released. Failed native start and shutdown errors are surfaced explicitly.
+Native callbacks copied into owned PCM packets. Bounded queue (256 packets, max 2 s by byte budget) reports overload instead of dropping samples. System audio's planar float buffers interleaved before shared converter. Stop/cancel closes reader immediately, releases native capture on worker; dispose drains callbacks before managed delegates released. Failed native start + shutdown errors surfaced explicitly.
 
-CI exercises managed lifecycle, permission/failure mapping, hot-plug/default
-refresh and native permission-free enumeration; it cannot grant interactive
-privacy permissions or verify physical microphones/interfaces. **Real capture
-and hardware qualification are pending on a Mac.** Check the signed development
-bundle with a built-in mic and an external interface, permission grant/denial,
-system playback, USB unplug/replug, default changes during capture, stop/restart
-and sustained preview on both hardware architectures. PCM preview is not yet
-broadcasting; use the separate **Go Live** control to publish it.
+CI exercises managed lifecycle, permission/failure mapping, hot-plug/default refresh, native permission-free enumeration; can't grant interactive privacy permissions or verify physical mics/interfaces. **Real capture and hardware qualification are pending on a Mac.** Check signed dev bundle with built-in mic + external interface, permission grant/denial, system playback, USB unplug/replug, default changes during capture, stop/restart, sustained preview on both hardware archs. PCM preview not broadcasting; use separate **Go Live** control to publish.
 
 ## FFmpeg / Icecast publishing backend
 
-`IBroadcastEncoder.StartAsync` accepts a resolved `BroadcastTarget` and
-optional `EncoderOptions` (float32, mono/stereo, 44.1/48 kHz,
-64/96/128/192/320 kbps). Without an override it uses the saved profile's settings;
-new profiles default to **44.1 kHz stereo/128 kbps**. The profile must use
-**audio/mpeg**. It returns an
-`IEncoderSession`; hand normalized `AudioCaptureService.FrameAvailable` frames
-to `Submit`, observe `Completion` and `Snapshot`, then stop/dispose the session.
-`Submit` copies PCM and never blocks a capture callback. Invalid format,
-non-finite samples, 256-packet capacity or a two-second byte-budget overrun
-explicitly fail the stream. One publisher per encoder service is allowed.
-The Go Live controller connects these services to the UI; starting preview
-does **not** broadcast.
+`IBroadcastEncoder.StartAsync` accepts resolved `BroadcastTarget` + optional `EncoderOptions` (float32, mono/stereo, 44.1/48 kHz, 64/96/128/192/320 kbps). Without override uses saved profile's settings; new profiles default **44.1 kHz stereo/128 kbps**. Profile must use **audio/mpeg**. Returns `IEncoderSession`; hand normalized `AudioCaptureService.FrameAvailable` frames to `Submit`, observe `Completion` and `Snapshot`, then stop/dispose session. `Submit` copies PCM, never blocks capture callback. Invalid format, non-finite samples, 256-packet capacity or 2 s byte-budget overrun explicitly fail stream. One publisher per encoder service. Go Live controller connects these services to UI; starting preview does **not** broadcast.
 
-FFmpeg reads raw float32 on stdin and writes MP3 on stdout. The managed
-publisher shares its authenticated PUT/`Expect: 100-continue` handshake with
-**Test connection**, then sends the encoded audio directly to Icecast. Passwords
-never appear in FFmpeg arguments, environment, URLs, temporary files or stderr.
-Authentication failure, occupied mount and denied publishing have specific
-statuses. Both Icecast 2.5's 409 and Icecast 2.4's 403 with the fixed
-`Mountpoint in use` plaintext reason are recognized without logging response
-text; 2.4's `100 Continue` followed by `200 OK` keeps the stream active.
-Disconnect, invalid responses, TLS certificate failures, pipe errors
-and ten-second network-write stalls are explicit failures. No redirects or
-certificate bypasses are allowed. FFmpeg stderr is drained/classified without
-retaining native text. State becomes **Streaming** only after encoded bytes
-are sent (not proof that a listener has received them).
+FFmpeg reads raw float32 on stdin, writes MP3 on stdout. Managed publisher shares authenticated PUT/`Expect: 100-continue` handshake with **Test connection**, then sends encoded audio directly to Icecast. Passwords never in FFmpeg args, env, URLs, temp files or stderr. Auth failure, occupied mount, denied publishing have specific statuses. Icecast 2.5's 409 and Icecast 2.4's 403 with fixed `Mountpoint in use` plaintext reason both recognized without logging response text; 2.4's `100 Continue` then `200 OK` keeps stream active. Disconnect, invalid responses, TLS cert failures, pipe errors, 10 s network-write stalls = explicit failures. No redirects or cert bypasses. FFmpeg stderr drained/classified without retaining native text. State becomes **Streaming** only after encoded bytes sent (not proof listener received them).
 
-Stop completes the PCM queue and closes stdin, allowing FFmpeg to flush MP3.
-If shutdown exceeds five seconds, the owned process tree is killed and reaped.
-DI host disposal stops an active session even if its caller forgot to do so.
-The child owns no server connection: if the parent exits abruptly, its redirected
-stdin/stdout/stderr pipes close; EOF/broken pipes make FFmpeg exit rather than
-leave a connected source behind. The publisher itself disconnects with the
-parent's socket. Graceful exit and failures also observe all pipe tasks before
-disposing native streams.
+Stop completes PCM queue + closes stdin, letting FFmpeg flush MP3. Shutdown >5 s → owned process tree killed + reaped. DI host dispose stops active session even if caller forgot. Child owns no server connection: if parent exits abruptly, redirected stdin/stdout/stderr pipes close; EOF/broken pipes make FFmpeg exit, no lingering connected source. Publisher disconnects with parent's socket. Graceful exit + failures observe all pipe tasks before disposing native streams.
 
-The app loads only `ffmpeg/ffmpeg` (`ffmpeg.exe` on Windows) relative to its
-application directory, never an arbitrary PATH executable. Build/publish copies
-the RID-specific bundle, **including corresponding sources and full licenses**.
-The minimal build includes LAME and TLS (OpenSSL on Linux, Schannel on Windows,
-Secure Transport on macOS), with no GPL-only/nonfree features. See
-[`THIRD_PARTY_NOTICES`](THIRD_PARTY_NOTICES) for versions, hashes, licensing
-and redistribution obligations. Users can replace/rebuild this separate
-executable; commercial distribution still requires packaging/license review.
+App loads only `ffmpeg/ffmpeg` (`ffmpeg.exe` on Windows) relative to app dir, never arbitrary PATH executable. Build/publish copies RID-specific bundle, **including corresponding sources and full licenses**. Minimal build includes LAME + TLS (OpenSSL on Linux, Schannel on Windows, Secure Transport on macOS), no GPL-only/nonfree features. See [`THIRD_PARTY_NOTICES`](THIRD_PARTY_NOTICES) for versions, hashes, licensing, redistribution obligations. Users can replace/rebuild this separate executable; commercial distribution still needs packaging/license review.
 
-After building the bundle, `dotnet test tests/Tropicast.Station.Encoding.Tests`
-exercises real encoding, decode, auth/mount status mapping, queue errors,
-network disconnect, graceful/forced process cleanup and owner disposal.
-Without a bundle, native codec tests explicitly skip; CI requires one.
-For the real listener POC, run a local Icecast with source password
-`tc-test-source` and set its port:
+After building bundle, `dotnet test tests/Tropicast.Station.Encoding.Tests` exercises real encoding, decode, auth/mount status mapping, queue errors, network disconnect, graceful/forced process cleanup, owner dispose. Without bundle, native codec tests explicitly skip; CI requires one. For real listener POC, run local Icecast with source password `tc-test-source` and set its port:
 
 ```bash
 TC_TEST_ICECAST_PORT=18000 dotnet test tests/Tropicast.Station.Encoding.Tests -c Release
 ```
 
-The POC sends a generated 600 Hz tone to a unique mount, checks the listener's
-HTTP success and `audio/mpeg`, captures over four seconds of MP3, decodes it
-with the bundled FFmpeg, and verifies stop. No microphone is recorded.
-Linux CI runs this against an isolated localhost Icecast in addition to the
-PulseAudio/keyring tests; all three OS jobs build and exercise native FFmpeg.
+POC sends generated 600 Hz tone to unique mount, checks listener HTTP success + `audio/mpeg`, captures >4 s MP3, decodes with bundled FFmpeg, verifies stop. No mic recorded. Linux CI runs this against isolated localhost Icecast plus PulseAudio/keyring tests; all three OS jobs build + exercise native FFmpeg.
 
 ## Audio levels and warnings
 
-The Broadcast tab keeps per-channel **peak** (amber) and **RMS** (green)
-meters beside the primary controls. The Audio source tab has the same meters.
-Start **preview** to check levels without transmitting, or **Go Live** to monitor
-the exact normalized float32 PCM feeding the encoder (after channel mapping
-and resampling, before MP3 compression). Levels refresh at 25 Hz, in dBFS;
-zero audio is displayed at the -90 dBFS meter floor. Numeric readings can
-exceed 0 dBFS even though the bars stop at 0.
+Broadcast tab keeps per-channel **peak** (amber) + **RMS** (green) meters beside primary controls. Audio source tab has same meters. **Preview** checks levels without transmitting; **Go Live** monitors exact normalized float32 PCM feeding encoder (after channel mapping + resampling, before MP3 compression). Levels refresh 25 Hz, in dBFS; zero audio shown at -90 dBFS meter floor. Numeric readings can exceed 0 dBFS though bars stop at 0.
 
-**CLIPPING** appears per channel for samples at or above -0.1 dBFS, with a
-two-second hold refreshed by further clipping. **SILENCE** appears when every
-channel stays below the configured RMS threshold for the configured duration.
-Defaults are -50 dBFS and five seconds; expand **Silence warning settings**
-to choose -90 to -10 dBFS and one to 60 seconds. Changes restart the silence
-countdown. A silent loopback endpoint that delivers no packets is also detected.
-Signal recovery clears the silence warning; stopping, device loss or a new
-capture clears the readings and clipping hold.
+**CLIPPING** shows per channel for samples ≥ -0.1 dBFS, 2 s hold refreshed by further clipping. **SILENCE** shows when every channel stays below configured RMS threshold for configured duration. Defaults -50 dBFS, 5 s; expand **Silence warning settings** to pick -90 to -10 dBFS and 1–60 s. Changes restart silence countdown. Silent loopback endpoint delivering no packets also detected. Signal recovery clears silence warning; stop, device loss, or new capture clears readings + clipping hold.
 
-The optional **in-app notification** is off by default and fires once per
-silence episode, not on every meter tick. Warnings work in preview and live
-mode and never stop the stream. These session-only meter preferences reset
-when the app restarts; they are independent of saved profile encoder settings.
+Optional **in-app notification** off by default, fires once per silence episode, not every meter tick. Warnings work in preview + live, never stop stream. Session-only meter prefs reset on app restart; independent of saved profile encoder settings.
 
 ## Go Live / Stop
 
-The first **Broadcast** tab provides the three-step station workflow:
-select a **saved connection profile**, select **one input or system-output
-source**, then press **Go Live**. Create/save credentials in the Connection
-profiles tab first. The current encoder requires an **audio/mpeg** profile and
-the bundled FFmpeg described above. Starting a broadcast replaces any active
-local preview with capture in the selected encoder format.
-The Broadcast tab shows the selected saved profile's bitrate, rate, channels
-and stream name. Unsaved editor changes and the source picker's **preview**
-rate/channels do not override saved broadcast settings.
+First **Broadcast** tab = three-step workflow: pick **saved connection profile**, pick **one input or system-output source**, press **Go Live**. Create/save credentials in Connection profiles tab first. Current encoder needs **audio/mpeg** profile + bundled FFmpeg above. Starting broadcast replaces any active local preview with capture in selected encoder format.
+Broadcast tab shows selected saved profile's bitrate, rate, channels, stream name. Unsaved editor changes and source picker's **preview** rate/channels don't override saved broadcast settings.
 
-The status badge and text expose **Idle → Connecting → Live → Stopping → Idle**,
-plus **Error** on capture/connection/encoder failure. **Live** begins when the
-encoder sends MP3 bytes, not just when authentication succeeds. The elapsed
-counter accumulates actual Live time (excluding reconnect downtime) and retains
-the last session duration after stopping.
-An idle system-output endpoint may not emit audio yet and remains Connecting.
-Transient publisher failures enter **Reconnecting** automatically. There is no
-silent source/profile fallback.
+Status badge/text expose **Idle → Connecting → Live → Stopping → Idle**, plus **Error** on capture/connection/encoder failure. **Live** begins when encoder sends MP3 bytes, not just on auth success. Elapsed counter accumulates actual Live time (excl. reconnect downtime), retains last session duration after stop.
+Idle system-output endpoint may not emit audio yet → stays Connecting.
+Transient publisher failures enter **Reconnecting** automatically. No silent source/profile fallback.
 
-While Connecting/Live/Reconnecting/Stopping, profile editing/testing, source selection,
-encoder-format controls and local preview commands are locked. **Stop broadcast**
-asks for confirmation when live or reconnecting; **Keep broadcasting** (or Escape) cancels the
-dialog. Stop while Connecting cancels startup without a live-stream warning.
-Closing the window or using tray **Quit** also asks before ending a live stream;
-confirming stops capture and flushes/reaps FFmpeg before closing.
-SIGTERM/OS/process termination still performs host cleanup where possible,
-but cannot always present an interactive confirmation.
+While Connecting/Live/Reconnecting/Stopping: profile editing/testing, source selection, encoder-format controls, local preview commands locked. **Stop broadcast** asks confirmation when live or reconnecting; **Keep broadcasting** (or Escape) cancels dialog. Stop while Connecting cancels startup without live-stream warning.
+Closing window or tray **Quit** also asks before ending live stream; confirming stops capture + flushes/reaps FFmpeg before closing.
+SIGTERM/OS/process termination still does host cleanup where possible, but can't always show interactive confirmation.
 
-The tray/menu-bar uses the Tropicast logo, with a red live dot for Live and
-Reconnecting, state/elapsed/countdown tooltip and menu, **Show**, **Stop broadcast**
-and **Quit** actions. Minimize keeps broadcasting; close means quit after
-confirmation, not hide-to-tray. A supported system tray is optional: the same
-controls remain available in the window. Buttons/selectors have screen-reader
-names; normal Tab navigation and Enter/Space activate controls. The prominent
-Go Live/Stop controls remain visible while source settings scroll.
+Tray/menu-bar uses Tropicast logo, red live dot for Live + Reconnecting, state/elapsed/countdown tooltip + menu, **Show**, **Stop broadcast**, **Quit** actions. Minimize keeps broadcasting; close = quit after confirmation, not hide-to-tray. System tray optional: same controls in window. Buttons/selectors have screen-reader names; normal Tab nav + Enter/Space activate controls. Prominent Go Live/Stop controls stay visible while source settings scroll.
 
-Headless tests cover profile/source prerequisites, keyboard start/stop, state
-text, selector locks, tray status, denied Stop/close, accepted close, capture
-removal and encoder errors. The opt-in Icecast suite additionally runs the
-whole controller with synthetic capture → converter → FFmpeg → real listener
-and verifies decodable MP3 and stop. This is not a physical microphone or
-manual platform accessibility qualification.
+Headless tests cover profile/source prerequisites, keyboard start/stop, state text, selector locks, tray status, denied Stop/close, accepted close, capture removal, encoder errors. Opt-in Icecast suite also runs whole controller with synthetic capture → converter → FFmpeg → real listener, verifies decodable MP3 + stop. Not physical mic or manual platform accessibility qualification.
 
 ### Automatic reconnect
 
-A dropped Icecast connection, network timeout, HTTP 5xx response or unexpected
-publisher process exit triggers a fresh encoder/source session on the **same
-saved target**. Initial unreachable connections also retry. Backoff begins at
-one second and doubles to a 30-second maximum, with ±20% jitter (still capped
-at 30 seconds). A successful return to Live resets the backoff.
+Dropped Icecast connection, network timeout, HTTP 5xx or unexpected publisher process exit triggers fresh encoder/source session on **same saved target**. Initial unreachable connections also retry. Backoff starts 1 s, doubles to 30 s max, ±20% jitter (still capped 30 s). Successful return to Live resets backoff.
 
-Capture and PCM meters continue during reconnect; audio produced while the
-publisher is absent is **not buffered or replayed**. The UI shows the upcoming
-attempt number and countdown, then connecting/waiting-for-audio status.
-**Retry now** skips the wait, without starting a parallel handshake; it is
-disabled while a new publisher is connecting or waiting for its first audio.
-**Stop broadcast** and confirmed Quit cancel both waits and in-flight
-handshakes, stop capture and release the encoder.
+Capture + PCM meters continue during reconnect; audio produced while publisher absent **not buffered or replayed**. UI shows upcoming attempt number + countdown, then connecting/waiting-for-audio status.
+**Retry now** skips wait, no parallel handshake; disabled while new publisher connecting or waiting for first audio.
+**Stop broadcast** and confirmed Quit cancel waits + in-flight handshakes, stop capture, release encoder.
 
-Authentication failures, TLS certificate/configuration failures, occupied
-mounts, other HTTP 4xx responses, invalid/missing encoder configuration,
-queue overruns and capture/device failures are **terminal**. They show an
-actionable Error and stop capture, rather than retrying forever. Correct the
-profile/source/bundle and use Go Live again. Error classification uses typed
-source/encoder failures, never arbitrary server message text. Credentials
-stay managed and do not enter native process arguments or diagnostic logs.
+Auth failures, TLS cert/config failures, occupied mounts, other HTTP 4xx, invalid/missing encoder config, queue overruns, capture/device failures = **terminal**. Show actionable Error + stop capture, no endless retry. Fix profile/source/bundle, Go Live again. Error classification uses typed source/encoder failures, never arbitrary server message text. Credentials stay managed, never in native process args or diagnostic logs.
 
-The UI and controller snapshot expose the number of **successful reconnects**
-and cumulative **downtime after first Live**, including reconnect handshakes
-and waiting for audio. Counters retain the last session values after Stop and
-reset at the next Go Live. Initial connection waiting is not live downtime.
+UI + controller snapshot expose count of **successful reconnects** and cumulative **downtime after first Live**, incl. reconnect handshakes + waiting for audio. Counters keep last session values after Stop, reset on next Go Live. Initial connection wait ≠ live downtime.
 
 ## Connection profiles
 
-Create a profile with a name, hostname/IP (no scheme or port), port, mount path
-(for example `/live.mp3`), source username (`source` by default), password,
-TLS selection and content type. Each profile also saves **MP3 bitrate**
-(64/96/128/192/320 kbps), **sample rate** (44100/48000 Hz), and **channels**
-(1 mono / 2 stereo). Defaults are 128 kbps, 44100 Hz, stereo. Existing profiles
-without these fields load with those defaults; explicitly invalid values are
-reported as corrupt/invalid settings, not silently replaced.
+Profile = name, hostname/IP (no scheme/port), port, mount path (e.g. `/live.mp3`), source username (`source` default), password, TLS choice, content type. Each profile also saves **MP3 bitrate** (64/96/128/192/320 kbps), **sample rate** (44100/48000 Hz), **channels** (1 mono / 2 stereo). Defaults 128 kbps, 44100 Hz, stereo. Existing profiles lacking these fields load with defaults; explicitly invalid values reported as corrupt/invalid, not silently replaced.
 
-Optional **stream name**, **description**, **genre** and **website URL** identify
-the stream to listeners. The profile name labels the local saved connection;
-it is distinct from the public stream name. These values are sent with the
-authenticated source handshake as `Ice-Name`, `Ice-Description`, `Ice-Genre`,
-`Ice-URL`, `Ice-Bitrate` and `Ice-Audio-Info`. Metadata is sent again on every
-reconnect. Icecast's `/status-json.xsl` exposes `server_name`,
-`server_description`, `genre`, `server_url` and `bitrate` while the mount is live.
-Blank optional metadata is omitted, allowing server defaults.
+Optional **stream name**, **description**, **genre**, **website URL** identify stream to listeners. Profile name labels local saved connection; distinct from public stream name. Values sent with authenticated source handshake as `Ice-Name`, `Ice-Description`, `Ice-Genre`, `Ice-URL`, `Ice-Bitrate` and `Ice-Audio-Info`. Metadata resent every reconnect. Icecast's `/status-json.xsl` exposes `server_name`, `server_description`, `genre`, `server_url` and `bitrate` while mount live. Blank optional metadata omitted → server defaults.
 
-Names/genres allow up to 128 characters, descriptions/URLs up to 512.
-Control characters are rejected; website URLs must be absolute HTTP/HTTPS
-addresses without credentials. Metadata is public: never enter passwords or
-other secrets there. The encoder remains MP3-only despite profiles supporting
-other content types for connection testing.
+Names/genres ≤128 chars, descriptions/URLs ≤512. Control chars rejected; website URLs must be absolute HTTP/HTTPS without credentials. Metadata public: never put passwords/secrets there. Encoder stays MP3-only though profiles support other content types for connection testing.
 
-**Save profile** writes non-secret settings
-to the user's application-data directory:
+**Save profile** writes non-secret settings to user's app-data dir:
 
 - Windows: `%APPDATA%\Tropicast\Station\profiles.json`
 - Linux: `$XDG_CONFIG_HOME/Tropicast/Station/profiles.json` (normally `~/.config`)
 - macOS: `~/Library/Application Support/Tropicast/Station/profiles.json`
 
-Passwords live separately in Windows Credential Manager, macOS Keychain, or
-the Linux Secret Service (libsecret). Saved passwords are never loaded into
-the editor; leave the password field blank to retain the existing password.
-Delete removes the selected profile and its credential. A failed settings
-write attempts to restore the previous credential.
+Passwords stored separately in Windows Credential Manager, macOS Keychain, or Linux Secret Service (libsecret). Saved passwords never loaded into editor; leave password blank to keep existing. Delete removes selected profile + its credential. Failed settings write tries to restore previous credential.
 
-Use TLS for non-local connections: with TLS disabled, HTTP Basic source
-credentials and audio travel unencrypted. TLS certificates must be trusted
-and match the host; the app does not bypass certificate checks.
+Use TLS for non-local connections: without TLS, HTTP Basic source credentials + audio travel unencrypted. TLS certs must be trusted + match host; app doesn't bypass cert checks.
 
-**Test connection** uses the current editor values (without saving them).
-It performs an authenticated Icecast `PUT` with `Expect: 100-continue`, sends
-no audio, and immediately closes the connection. This briefly reserves a
-free mount; a successful test is only a point-in-time check, not a reservation
-for a later broadcast. Authentication failure (401), mount in use (409),
-publishing denied (403), network failure and TLS errors are reported separately.
-Do not use an Icecast admin or shared production source password.
+**Test connection** uses current editor values (unsaved). Does authenticated Icecast `PUT` with `Expect: 100-continue`, sends no audio, closes immediately. Briefly reserves free mount; success = point-in-time check, not reservation for later broadcast. Auth failure (401), mount in use (409), publishing denied (403), network failure, TLS errors reported separately. Don't use Icecast admin or shared production source password.
 
-Broadcasting resolves a saved profile through
-`IBroadcastTargetProvider`. `ManualBroadcastTargetProvider` rejects invalid
-profiles and missing credentials before returning an ephemeral target; a
-future API-backed provider can replace it without changing the capture pipeline.
+Broadcasting resolves saved profile via `IBroadcastTargetProvider`. `ManualBroadcastTargetProvider` rejects invalid profiles + missing credentials before returning ephemeral target; future API-backed provider can replace it without changing capture pipeline.
 
 ## Logging and safe diagnostics
 
-The **Diagnostics** tab shows the user log directory and **Export diagnostics**
-opens a ZIP save dialog. Nothing is uploaded automatically. The bundle contains
-`diagnostics.json` (app/OS/runtime versions, architecture, anonymous device
-kinds/default flags/native formats, broadcast state and reconnect/downtime
-counters) and `logs/recent.jsonl` (up to five recent log files).
+**Diagnostics** tab shows user log dir; **Export diagnostics** opens ZIP save dialog. Nothing uploaded automatically. Bundle has `diagnostics.json` (app/OS/runtime versions, arch, anonymous device kinds/default flags/native formats, broadcast state, reconnect/downtime counters) and `logs/recent.jsonl` (up to 5 recent log files).
 
-Logs use .NET `ILogger` structured events and a small rolling JSON-lines
-provider; no new logging framework is required. Files roll at **1 MiB** with
-**10 files retained**, in:
+Logs use .NET `ILogger` structured events + small rolling JSON-lines provider; no new logging framework. Files roll at **1 MiB**, **10 files retained**, in:
 
 - Windows: `%LOCALAPPDATA%\Tropicast\Station\logs`
 - Linux: `$XDG_STATE_HOME/Tropicast/Station/logs`, normally `~/.local/state/Tropicast/Station/logs`
 - macOS: `~/Library/Logs/Tropicast/Station`
 
-Files are created with owner read/write permission and the log directory with
-owner-only access on Unix. Each process has unique filenames. Recent records
-are flushed synchronously; writes/rotation are serialized. Logging is
-Information and above; broadcast state changes are recorded, not every meter
-tick. Disk/permission failures set an explicit failure flag and emit a fixed
-credential-safe stderr warning; export reports the logging failure.
+Files created owner read/write; log dir owner-only on Unix. Each process gets unique filenames. Recent records flushed synchronously; writes/rotation serialized. Logging = Information+; broadcast state changes recorded, not every meter tick. Disk/permission failures set explicit failure flag + emit fixed credential-safe stderr warning; export reports logging failure.
 
-**Every configured sink**, including stderr, uses the same fail-closed
-projection. It retains only timestamp, severity, approved category, numeric
-event ID, approved error type and approved numeric counters. Raw formatted
-messages, templates, scopes, arbitrary structured fields, exception messages,
-stack traces, native stderr, URLs and FFmpeg command lines are omitted—not
-regex-redacted after logging. This also protects credentials not yet loaded
-into the app, encoded credentials and malicious diagnostic text. Avalonia's
-unfiltered trace sink is disabled. App-owned source classes and runtime
-messages use **Tropicast** naming; external Icecast commands/schema/headers
-and technical references retain their actual names.
+**Every configured sink**, incl. stderr, uses same fail-closed projection. Keeps only timestamp, severity, approved category, numeric event ID, approved error type, approved numeric counters. Raw formatted messages, templates, scopes, arbitrary structured fields, exception messages, stack traces, native stderr, URLs, FFmpeg command lines omitted—not regex-redacted after logging. Also protects credentials not yet loaded into app, encoded credentials, malicious diagnostic text. Avalonia's unfiltered trace sink disabled. App-owned source classes + runtime messages use **Tropicast** naming; external Icecast commands/schema/headers + technical refs keep actual names.
 
-Events `1301` (bundle assembled), `1302` (broadcast state/counters), `1303`
-(unhandled error) and `1304` (export failure) support diagnosis. Broadcast
-state numbers are Idle=0, Connecting=1, Live=2, Reconnecting=3, Stopping=4,
-Error=5. Existing capture/profile/encoder warnings retain their category
-and approved error type.
+Events `1301` (bundle assembled), `1302` (broadcast state/counters), `1303` (unhandled error), `1304` (export failure) support diagnosis. Broadcast state numbers: Idle=0, Connecting=1, Live=2, Reconnecting=3, Stopping=4, Error=5. Existing capture/profile/encoder warnings keep category + approved error type.
 
-Export excludes profiles/passwords, endpoints, stream metadata, device
-names/stable IDs, usernames, machine names, user paths, raw errors and audio.
-Recent logs are parsed and projected again before export, so manually added
-free text/fields cannot leak. Corrupt or oversized logs produce a visible
-export failure rather than an incomplete success. Device identities are
-intentionally anonymous; users can describe their hardware separately.
+Export excludes profiles/passwords, endpoints, stream metadata, device names/stable IDs, usernames, machine names, user paths, raw errors, audio. Recent logs parsed + re-projected before export, so manually added free text/fields can't leak. Corrupt/oversized logs → visible export failure, not incomplete success. Device identities intentionally anonymous; users can describe hardware separately.
 
-Unhandled dispatcher errors and unobserved task failures stop capture and
-publishing where possible, show a generic restart-required dialog, then quit.
-Handlers are detached on exit. Fatal CLR/process errors cannot reliably
-display or await a dialog: the handler synchronously records safe error type,
-emits a fixed restart message and exits with code 1 before the runtime can
-print raw managed exception details. Native fatal errors remain outside this
-managed handler's control. Startup errors
-also return exit code 1 with safe logs/stderr; no secret-bearing exception
-text is displayed. These handlers do not claim to recover corrupted state.
+Unhandled dispatcher errors + unobserved task failures stop capture/publishing where possible, show generic restart-required dialog, quit. Handlers detached on exit. Fatal CLR/process errors can't reliably show/await dialog: handler synchronously records safe error type, emits fixed restart message, exits code 1 before runtime can print raw managed exception details. Native fatal errors outside this managed handler's control. Startup errors also return exit code 1 with safe logs/stderr; no secret-bearing exception text shown. Handlers don't claim to recover corrupted state.
 
-Automated tests inject credential-bearing messages, scopes, command lines,
-URLs, exceptions and edited log records; verify both file/console sinks,
-rolling bounds/private permissions, ZIP contents, real FFmpeg live-session
-password absence and the actual dispatcher error dialog/cleanup.
+Automated tests inject credential-bearing messages, scopes, command lines, URLs, exceptions, edited log records; verify file/console sinks, rolling bounds/private permissions, ZIP contents, real FFmpeg live-session password absence, actual dispatcher error dialog/cleanup.
 
 ## Packaging and releases
 
-Self-contained installers (Windows MSIX, Linux AppImage, macOS DMG for Apple
-Silicon and Intel) are built by `scripts/package-*.{ps1,sh}`, verified in CI and
-published as a draft GitHub Release when a `v*` tag is pushed. See
-[`docs/packaging.md`](docs/packaging.md) for formats, Linux prerequisites,
-signing secrets and the release procedure.
+Self-contained installers (Windows MSIX, Linux AppImage, macOS DMG for Apple Silicon + Intel) built by `scripts/package-*.{ps1,sh}`, verified in CI, published as draft GitHub Release on `v*` tag push. See [`docs/packaging.md`](docs/packaging.md) for formats, Linux prereqs, signing secrets, release procedure.
 
 ## Conventions
 
 - **MVVM** with [CommunityToolkit.Mvvm](https://learn.microsoft.com/dotnet/communitytoolkit/mvvm/).
-  Bindings are compiled by default, so views declare `x:DataType`.
-- **Dependency injection, configuration and logging** via
-  `Microsoft.Extensions.Hosting`. Each library exposes an
-  `AddStation<Layer>()` registration extension, and the app wires them together
-  in `AppHost`.
-- **Central package management**: versions live in `Directory.Packages.props`.
-- **Strict builds**: nullable reference types, recommended .NET analyzers,
-  code style enforced at build time (`.editorconfig`) and warnings treated as
-  errors.
+  Bindings compiled by default, so views declare `x:DataType`.
+- **Dependency injection, configuration and logging** via `Microsoft.Extensions.Hosting`. Each lib exposes `AddStation<Layer>()` registration extension; app wires them in `AppHost`.
+- **Central package management**: versions in `Directory.Packages.props`.
+- **Strict builds**: nullable reference types, recommended .NET analyzers, code style enforced at build (`.editorconfig`), warnings as errors.
 
 ## Continuous integration
 
-GitHub Actions (`.github/workflows/ci.yml`) restores, builds and tests the
-solution on `windows-latest`, `ubuntu-latest` and `macos-latest` for every push
-to `main` and every pull request. UI tests use Avalonia Headless, so no display
-server is required.
+GitHub Actions (`.github/workflows/ci.yml`) restores, builds, tests solution on `windows-latest`, `ubuntu-latest` and `macos-latest` for every push to `main` + every PR. UI tests use Avalonia Headless, no display server needed.
 
-CI also exercises the real OS credential stores using unique test entries
-which are deleted afterwards (an isolated keyring/keychain on Linux/macOS).
-Locally, those integration tests are opt-in:
+CI also exercises real OS credential stores with unique test entries deleted after (isolated keyring/keychain on Linux/macOS). Locally, those integration tests opt-in:
 
 ```bash
 TC_TEST_OS_SECRETS=1 dotnet test
 ```
 
-To run the optional real Icecast handshake test, start a local Icecast instance
-configured with source username `source` and password `tc-test-source`, then
-set `TC_TEST_ICECAST_PORT` to its port when running `dotnet test`. It uses a
-unique temporary mount and tests accepted credentials, wrong credentials,
-an occupied mount and release after disconnect.
+For optional real Icecast handshake test, start local Icecast with source username `source` + password `tc-test-source`, set `TC_TEST_ICECAST_PORT` to its port when running `dotnet test`. Uses unique temp mount; tests accepted creds, wrong creds, occupied mount, release after disconnect.
 
-The independent restart test launches its own loopback-only Icecast, stops
-and starts that exact server, verifies automatic recovery with decodable
-listener audio, and checks that wrong credentials are terminal. It does not
-restart the shared `TC_TEST_ICECAST_PORT` instance. Ubuntu CI runs it using
-`TC_TEST_ICECAST_EXECUTABLE=/usr/bin/icecast2`. Locally, opt in with either a
-native executable or an existing Docker image:
+Independent restart test launches own loopback-only Icecast, stops/starts that exact server, verifies auto recovery with decodable listener audio, checks wrong creds terminal. Doesn't restart shared `TC_TEST_ICECAST_PORT` instance. Ubuntu CI runs it with `TC_TEST_ICECAST_EXECUTABLE=/usr/bin/icecast2`. Locally, opt in with native executable or existing Docker image:
 
 ```bash
 TC_TEST_ICECAST_DOCKER_IMAGE=tropicast-icecast dotnet test \
@@ -660,33 +286,17 @@ TC_TEST_ICECAST_EXECUTABLE=/usr/bin/icecast2 dotnet test \
   --filter FullyQualifiedName~ReconnectIntegrationTests
 ```
 
-The test uses known test-only passwords, synthetic tones, a unique private
-container/process and an ephemeral host port; it removes its own resources
-afterward and never records microphones or restarts a production server.
+Test uses known test-only passwords, synthetic tones, unique private container/process, ephemeral host port; removes own resources after, never records mics or restarts production server.
 
-The same opt-in server harness verifies stream metadata against
-`status-json.xsl`, then decodes listener MP3 to check the saved sample rate and
-channel count. Use `--filter FullyQualifiedName~Real_Tropicast_status` with either
-server environment variable above to run that acceptance check alone.
+Same opt-in server harness verifies stream metadata against `status-json.xsl`, then decodes listener MP3 to check saved sample rate + channel count. Use `--filter FullyQualifiedName~Real_Tropicast_status` with either server env var above to run that acceptance check alone.
 
 ### End-to-end suite (Tropicast container)
 
-`tests/Tropicast.Station.E2E.Tests` proves the whole pipeline against the real
-Tropicast Icecast image (built from `tests/Tropicast.Station.E2E.Tests/docker`):
-synthetic tone capture, the bundled FFmpeg encoder, the source handshake and a
-listener whose MP3 is decoded and checked for non-silent audio. Every test starts
-its own container on an ephemeral loopback port with freshly generated random
-credentials, and removes it afterwards. The scenarios are go-live and stop, an
-unattended recovery after a server restart, a wrong password, a mount already in
-use (the first source keeps playing) and an unreachable host.
+`tests/Tropicast.Station.E2E.Tests` proves whole pipeline against real Tropicast Icecast image (built from `tests/Tropicast.Station.E2E.Tests/docker`): synthetic tone capture, bundled FFmpeg encoder, source handshake, listener whose MP3 decoded + checked for non-silent audio. Each test starts own container on ephemeral loopback port with fresh random creds, removes it after. Scenarios: go-live + stop, unattended recovery after server restart, wrong password, mount already in use (first source keeps playing), unreachable host.
 
 ```bash
 bash scripts/build-ffmpeg.sh linux-x64   # once
 bash scripts/e2e.sh                      # builds the image, then runs the suite
 ```
 
-Needs Docker. Without `TC_E2E_IMAGE` the suite skips, so a plain `dotnet test`
-stays fast; with `TC_E2E_REQUIRED=1` (set by `scripts/e2e.sh` and CI) a missing
-image or FFmpeg bundle fails the run. CI runs it in the separate Ubuntu
-"End-to-end" job, and failures name the expected condition and the broadcast's
-last state and message.
+Needs Docker. Without `TC_E2E_IMAGE` suite skips, so plain `dotnet test` stays fast; with `TC_E2E_REQUIRED=1` (set by `scripts/e2e.sh` and CI) missing image or FFmpeg bundle fails run. CI runs it in separate Ubuntu "End-to-end" job; failures name expected condition + broadcast's last state and message.
