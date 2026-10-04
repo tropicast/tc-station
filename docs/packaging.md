@@ -51,6 +51,60 @@ Without signing configuration the packages are still produced, but:
 - **macOS images are ad-hoc signed and not notarized.** Gatekeeper requires manual approval.
 - **AppImage** needs no signing.
 
+## Installing a self-signed MSIX (Windows)
+
+Use this for pre-releases signed with a self-signed or private-CA certificate. Windows blocks the
+install until the certificate is trusted **machine-wide**. Importing the PFX into your personal
+store (`CurrentUser\My`) is not enough; the certificate must be in `LocalMachine\TrustedPeople`.
+
+**1. Create the certificate (once, maintainer).** Follow the Windows section of
+[`signing-secrets.md`](signing-secrets.md): create the self-signed certificate, export the PFX,
+store `WINDOWS_PFX_BASE64`, `WINDOWS_PFX_PASSWORD` and `WINDOWS_MSIX_PUBLISHER` as secrets. The
+publisher must equal the certificate subject exactly (for example `CN=Tropicast`).
+
+**2. Release.** Push a tag such as `v0.1.0-rc1` (commit on `main`). When the workflow ends, download
+`Tropicast-Station-<version>-win-x64.msix` from the draft release. The build prints a warning that
+the chain is not trusted; that is expected.
+
+**3. Install on the test machine.** Open PowerShell **as administrator** and run:
+
+```powershell
+.\scripts\install-windows-msix.ps1 -Package .\Tropicast-Station-0.1.0-win-x64.msix
+```
+
+The script reads the certificate from the MSIX signature, adds it to `LocalMachine\TrustedPeople`
+and runs `Add-AppxPackage`. If it cannot read the signature, export the public certificate and pass
+it:
+
+```powershell
+Export-Certificate -Cert (Get-PfxCertificate .\tropicast.pfx) -FilePath .\tropicast.cer
+.\scripts\install-windows-msix.ps1 -Package .\Tropicast-Station-0.1.0-win-x64.msix -Certificate .\tropicast.cer
+```
+
+Manual equivalent:
+
+```powershell
+Import-Certificate -FilePath .\tropicast.cer -CertStoreLocation Cert:\LocalMachine\TrustedPeople
+Add-AppxPackage .\Tropicast-Station-0.1.0-win-x64.msix
+```
+
+**4. Uninstall and untrust.**
+
+```powershell
+.\scripts\install-windows-msix.ps1 -Package .\Tropicast-Station-0.1.0-win-x64.msix -Remove
+```
+
+**Troubleshooting.**
+
+- `0x800B0109` / `0x800B010A`: the certificate is not in `LocalMachine\TrustedPeople`. Repeat step 3
+  as administrator.
+- `0x8007000B` / publisher mismatch: `WINDOWS_MSIX_PUBLISHER` differs from the certificate subject.
+  Read the subject with `(Get-PfxCertificate tropicast.pfx).Subject` and update the secret.
+- After you regenerate the certificate, update all three secrets, push a **new** tag and install
+  the new package. Remove the old certificate first with `-Remove` using the old package.
+
+Only trust certificates you created yourself, and remove them when testing ends.
+
 ## Continuous integration
 
 `ci.yml` packages on every platform for each PR and push: it installs and launches the MSIX
