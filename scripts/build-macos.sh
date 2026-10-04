@@ -43,21 +43,19 @@ for size in 16 32 128 256; do
 done
 iconutil -c icns "$iconset" -o "$bundle/Contents/Resources/tropicast.icns"
 
-# Sign nested code first (never --deep): every Mach-O file and managed assembly, then the bundle.
+# Sign nested code first (never --deep), then the main executable, then the bundle.
 if [[ "$identity" == "-" ]]; then
   sign=(codesign --force --sign -)
 else
   sign=(codesign --force --timestamp --options runtime --sign "$identity")
 fi
+# codesign treats every file under Contents/MacOS (including managed assemblies, licenses and sources)
+# as nested code, so each one needs its own signature before the bundle is sealed.
 while IFS= read -r -d '' file; do
-  # Managed assemblies are nested code to codesign even though they are not Mach-O files.
-  if [[ "$file" == *.dll ]] || file -b "$file" | grep -q 'Mach-O'; then
-    if [[ "$file" == "$bundle/Contents/MacOS/Tropicast.Station" ]]; then
-      continue
-    fi
+  if [[ "$file" != "$bundle/Contents/MacOS/Tropicast.Station" ]]; then
     "${sign[@]}" "$file"
   fi
-done < <(find "$bundle/Contents" -type f -print0)
+done < <(find "$bundle/Contents/MacOS" -type f -print0)
 "${sign[@]}" --entitlements "$entitlements" "$bundle/Contents/MacOS/Tropicast.Station"
 "${sign[@]}" --entitlements "$entitlements" "$bundle"
 codesign --verify --deep --strict --verbose=2 "$bundle"
