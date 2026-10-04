@@ -10,6 +10,7 @@
     <ProjectReference Include="..\Tropicast.Station.Audio\Tropicast.Station.Audio.csproj" />
     <ProjectReference Include="..\Tropicast.Station.Infrastructure\Tropicast.Station.Infrastructure.csproj" />
     <InternalsVisibleTo Include="Tropicast.Station.Encoding.Tests" />
+    <InternalsVisibleTo Include="Tropicast.Station.E2E.Tests" />
   </ItemGroup>
 
 </Project>
