@@ -51,6 +51,11 @@ Users only get a clean install if the certificate chains to a trusted root.
    # e.g. CN=Tropicast, O=Tropicast, C=FR
    ```
 
+A self-signed PFX is accepted by the release build, which only warns that the chain is untrusted.
+Anyone installing that MSIX must first import the `.cer` into `LocalMachine\TrustedPeople`.
+Once you use a public CA certificate, set the repository variable `TC_REQUIRE_TRUSTED_CHAIN` to `1`
+(Settings → Secrets and variables → Actions → Variables).
+
 ## macOS
 
 Requires a paid [Apple Developer Program](https://developer.apple.com/programs/) membership.

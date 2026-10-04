@@ -3,6 +3,7 @@
 #
 # Signing (an MSIX cannot be installed unsigned):
 #   TC_WINDOWS_PFX_PATH / TC_WINDOWS_PFX_PASSWORD  sign with this certificate; TC_MSIX_PUBLISHER must equal its subject
+#   TC_REQUIRE_TRUSTED_CHAIN=1                     fail when the certificate does not chain to a trusted root (use with a public CA)
 #   -TestSign                                      sign with a throw-away self-signed cert (CI install test only)
 [CmdletBinding()]
 param(
@@ -72,7 +73,21 @@ if ($TestSign) {
 }
 if ($LASTEXITCODE -ne 0) { throw 'signtool failed.' }
 if (-not $TestSign) {
-    & $signtool verify /pa $package
-    if ($LASTEXITCODE -ne 0) { throw 'The signature did not verify against a trusted chain.' }
+    # signtool sign already rejects a publisher that differs from the manifest, so verify only checks
+    # integrity and trust. A self-signed or private-CA root is not trusted on the runner: that is expected
+    # (users import the certificate), so warn. Anything else, such as a tampered file, still fails.
+    $ErrorActionPreference = 'Continue'
+    $verify = & $signtool verify /pa $package 2>&1 | Out-String
+    $verifyExit = $LASTEXITCODE
+    $ErrorActionPreference = 'Stop'
+    Write-Output $verify
+    if ($verifyExit -ne 0) {
+        $untrustedRoot = $verify -match 'terminated in a root\s+certificate which is not trusted'
+        if ($untrustedRoot -and $env:TC_REQUIRE_TRUSTED_CHAIN -ne '1') {
+            Write-Warning 'The signing certificate does not chain to a trusted root (self-signed or private CA). The MSIX installs only on machines that trust this certificate; set TC_REQUIRE_TRUSTED_CHAIN=1 to make this an error.'
+        } else {
+            throw 'The MSIX signature did not verify.'
+        }
+    }
 }
 Write-Output "Built $package"
