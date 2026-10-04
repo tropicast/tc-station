@@ -10,6 +10,7 @@ auto-generated list of merged pull requests.
 ## [Unreleased]
 
 ### Added
+- End-to-end test suite against the Tropicast Icecast container (go-live, restart recovery, wrong password, mount in use, unreachable host), run in CI.
 - Packaging: Windows MSIX, Linux AppImage and macOS DMG (Apple Silicon and Intel) with a tag-driven release workflow.
 - Credential-safe rolling diagnostics and a diagnostics export.
 - Per-profile stream quality and public stream metadata.

@@ -205,3 +205,51 @@ jobs:
             artifacts/package/*.msix
           retention-days: 7
           if-no-files-found: error
+
+  e2e:
+    name: End-to-end (Tropicast container)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-dotnet@v6
+        with:
+          global-json-file: global.json
+
+      - name: Cache source-built FFmpeg bundles
+        id: ffmpeg-cache
+        uses: actions/cache@v5
+        with:
+          path: artifacts/ffmpeg/
+          key: ffmpeg-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('scripts/build-ffmpeg.sh', 'THIRD_PARTY_NOTICES') }}
+
+      - name: Build FFmpeg
+        if: steps.ffmpeg-cache.outputs.cache-hit != 'true'
+        run: bash scripts/build-ffmpeg.sh linux-x64
+
+      - uses: docker/setup-buildx-action@v3
+
+      - name: Build the Tropicast Icecast image
+        uses: docker/build-push-action@v6
+        with:
+          context: tests/Tropicast.Station.E2E.Tests/docker
+          load: true
+          tags: tropicast-station-e2e:ci
+          cache-from: type=gha,scope=tropicast-e2e-image
+          cache-to: type=gha,scope=tropicast-e2e-image,mode=max
+
+      - name: Run end-to-end tests
+        env:
+          TC_E2E_IMAGE: tropicast-station-e2e:ci
+          TC_E2E_REQUIRED: "1"
+        run: >
+          dotnet test tests/Tropicast.Station.E2E.Tests -c Release
+          --logger trx --results-directory TestResults
+
+      - name: Upload test results
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: test-results-e2e
+          path: TestResults/
+          if-no-files-found: ignore

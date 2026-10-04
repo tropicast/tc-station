@@ -668,3 +668,25 @@ The same opt-in server harness verifies stream metadata against
 `status-json.xsl`, then decodes listener MP3 to check the saved sample rate and
 channel count. Use `--filter FullyQualifiedName~Real_Tropicast_status` with either
 server environment variable above to run that acceptance check alone.
+
+### End-to-end suite (Tropicast container)
+
+`tests/Tropicast.Station.E2E.Tests` proves the whole pipeline against the real
+Tropicast Icecast image (built from `tests/Tropicast.Station.E2E.Tests/docker`):
+synthetic tone capture, the bundled FFmpeg encoder, the source handshake and a
+listener whose MP3 is decoded and checked for non-silent audio. Every test starts
+its own container on an ephemeral loopback port with freshly generated random
+credentials, and removes it afterwards. The scenarios are go-live and stop, an
+unattended recovery after a server restart, a wrong password, a mount already in
+use (the first source keeps playing) and an unreachable host.
+
+```bash
+bash scripts/build-ffmpeg.sh linux-x64   # once
+bash scripts/e2e.sh                      # builds the image, then runs the suite
+```
+
+Needs Docker. Without `TC_E2E_IMAGE` the suite skips, so a plain `dotnet test`
+stays fast; with `TC_E2E_REQUIRED=1` (set by `scripts/e2e.sh` and CI) a missing
+image or FFmpeg bundle fails the run. CI runs it in the separate Ubuntu
+"End-to-end" job, and failures name the expected condition and the broadcast's
+last state and message.
