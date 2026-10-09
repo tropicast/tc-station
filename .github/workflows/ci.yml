@@ -53,7 +53,9 @@ jobs:
         uses: actions/cache@v5
         with:
           path: artifacts/ffmpeg/
-          key: ffmpeg-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('scripts/build-ffmpeg.sh', 'THIRD_PARTY_NOTICES') }}
+          # runner.environment keeps hosted (Ubuntu) and self-hosted (Debian 12) bundles
+          # apart: a bundle built against a newer glibc does not start on the other.
+          key: ffmpeg-${{ runner.os }}-${{ runner.arch }}-${{ runner.environment }}-${{ hashFiles('scripts/build-ffmpeg.sh', 'THIRD_PARTY_NOTICES') }}
 
       - name: Build FFmpeg (Windows)
         if: runner.os == 'Windows' && steps.ffmpeg-cache.outputs.cache-hit != 'true'
@@ -264,7 +266,9 @@ jobs:
         uses: actions/cache@v5
         with:
           path: artifacts/ffmpeg/
-          key: ffmpeg-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('scripts/build-ffmpeg.sh', 'THIRD_PARTY_NOTICES') }}
+          # runner.environment keeps hosted (Ubuntu) and self-hosted (Debian 12) bundles
+          # apart: a bundle built against a newer glibc does not start on the other.
+          key: ffmpeg-${{ runner.os }}-${{ runner.arch }}-${{ runner.environment }}-${{ hashFiles('scripts/build-ffmpeg.sh', 'THIRD_PARTY_NOTICES') }}
 
       - name: Build FFmpeg
         if: steps.ffmpeg-cache.outputs.cache-hit != 'true'
