@@ -25,11 +25,19 @@ jobs:
       fail-fast: false
       matrix:
         os: [windows-latest, ubuntu-latest, macos-latest]
-    runs-on: ${{ matrix.os }}
+        include:
+          # RUNS_ON (JSON labels) moves the Linux job to the self-hosted org runner,
+          # as in tc-streaming; delete the variable to fall back to hosted runners.
+          - os: ubuntu-latest
+            runner: ${{ vars.RUNS_ON || '"ubuntu-latest"' }}
+    runs-on: ${{ matrix.runner && fromJSON(matrix.runner) || matrix.os }}
     steps:
       - uses: actions/checkout@v7
 
       - uses: actions/setup-dotnet@v6
+        env:
+          # The default /usr/share/dotnet is not writable on the self-hosted runner.
+          DOTNET_INSTALL_DIR: ${{ runner.tool_cache }}/dotnet
         with:
           global-json-file: global.json
 
@@ -45,7 +53,9 @@ jobs:
         uses: actions/cache@v5
         with:
           path: artifacts/ffmpeg/
-          key: ffmpeg-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('scripts/build-ffmpeg.sh', 'THIRD_PARTY_NOTICES') }}
+          # runner.environment keeps hosted (Ubuntu) and self-hosted (Debian 12) bundles
+          # apart: a bundle built against a newer glibc does not start on the other.
+          key: ffmpeg-${{ runner.os }}-${{ runner.arch }}-${{ runner.environment }}-${{ hashFiles('scripts/build-ffmpeg.sh', 'THIRD_PARTY_NOTICES') }}
 
       - name: Build FFmpeg (Windows)
         if: runner.os == 'Windows' && steps.ffmpeg-cache.outputs.cache-hit != 'true'
@@ -54,7 +64,9 @@ jobs:
 
       - name: Build FFmpeg (Linux)
         if: runner.os == 'Linux' && steps.ffmpeg-cache.outputs.cache-hit != 'true'
-        run: bash scripts/build-ffmpeg.sh linux-x64
+        run: |
+          sudo apt-get -o DPkg::Lock::Timeout=300 install -y -qq pkg-config
+          bash scripts/build-ffmpeg.sh linux-x64
 
       - name: Build FFmpeg (macOS Apple Silicon and Intel)
         if: runner.os == 'macOS' && steps.ffmpeg-cache.outputs.cache-hit != 'true'
@@ -88,7 +100,12 @@ jobs:
 
       - name: Prepare Linux keyring and PulseAudio
         if: runner.os == 'Linux'
-        run: sudo apt-get update -qq && sudo apt-get install -y -qq libsecret-tools gnome-keyring dbus pulseaudio pulseaudio-utils icecast2
+        run: |
+          # Self-hosted runners persist: wait for another job's apt lock and keep the
+          # packaged icecast2 service off (the tests start their own server).
+          sudo apt-get -o DPkg::Lock::Timeout=300 update -qq
+          sudo apt-get -o DPkg::Lock::Timeout=300 install -y -qq libsecret-tools gnome-keyring dbus pulseaudio pulseaudio-utils icecast2
+          sudo systemctl disable --now icecast2 2> /dev/null || true
 
       - name: Test (Linux with unlocked keyring and isolated PulseAudio)
         if: runner.os == 'Linux'
@@ -133,6 +150,8 @@ jobs:
 
       - name: Upload test results
         if: always()
+        # Artifacts are a convenience: a full storage quota must not fail the build.
+        continue-on-error: true
         uses: actions/upload-artifact@v7
         with:
           name: test-results-${{ matrix.os }}
@@ -208,7 +227,7 @@ jobs:
       - name: Package and smoke-test AppImage (Linux)
         if: runner.os == 'Linux'
         run: |
-          sudo apt-get install -y -qq xvfb desktop-file-utils
+          sudo apt-get -o DPkg::Lock::Timeout=300 install -y -qq xvfb xauth desktop-file-utils
           bash scripts/package-linux.sh
           image="$PWD/artifacts/package/Tropicast-Station-0.1.0-x86_64.AppImage"
           xvfb-run -a "$image" --appimage-extract-and-run > "$RUNNER_TEMP/tc-appimage.log" 2>&1 &
@@ -221,6 +240,8 @@ jobs:
           pkill -f 'usr/bin/Tropicast.Station$'
 
       - name: Upload packages
+        # Artifacts are a convenience: a full storage quota must not fail the build.
+        continue-on-error: true
         uses: actions/upload-artifact@v7
         with:
           name: packages-${{ matrix.os }}
@@ -233,11 +254,14 @@ jobs:
 
   e2e:
     name: End-to-end (Tropicast container)
-    runs-on: ubuntu-latest
+    runs-on: ${{ fromJSON(vars.RUNS_ON || '"ubuntu-latest"') }}
     steps:
       - uses: actions/checkout@v7
 
       - uses: actions/setup-dotnet@v6
+        env:
+          # The default /usr/share/dotnet is not writable on the self-hosted runner.
+          DOTNET_INSTALL_DIR: ${{ runner.tool_cache }}/dotnet
         with:
           global-json-file: global.json
 
@@ -246,11 +270,15 @@ jobs:
         uses: actions/cache@v5
         with:
           path: artifacts/ffmpeg/
-          key: ffmpeg-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('scripts/build-ffmpeg.sh', 'THIRD_PARTY_NOTICES') }}
+          # runner.environment keeps hosted (Ubuntu) and self-hosted (Debian 12) bundles
+          # apart: a bundle built against a newer glibc does not start on the other.
+          key: ffmpeg-${{ runner.os }}-${{ runner.arch }}-${{ runner.environment }}-${{ hashFiles('scripts/build-ffmpeg.sh', 'THIRD_PARTY_NOTICES') }}
 
       - name: Build FFmpeg
         if: steps.ffmpeg-cache.outputs.cache-hit != 'true'
-        run: bash scripts/build-ffmpeg.sh linux-x64
+        run: |
+          sudo apt-get -o DPkg::Lock::Timeout=300 install -y -qq pkg-config
+          bash scripts/build-ffmpeg.sh linux-x64
 
       - uses: docker/setup-buildx-action@v3
 
@@ -273,6 +301,8 @@ jobs:
 
       - name: Upload test results
         if: always()
+        # Artifacts are a convenience: a full storage quota must not fail the build.
+        continue-on-error: true
         uses: actions/upload-artifact@v7
         with:
           name: test-results-e2e

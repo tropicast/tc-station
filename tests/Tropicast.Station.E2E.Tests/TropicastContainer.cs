@@ -111,10 +111,14 @@ internal sealed class TropicastContainer : IAsyncDisposable
 
     internal async Task<string> LogsAsync() => await DockerAsync(CancellationToken.None, "logs", "--tail", "50", _name);
 
+    private static readonly TimeSpan ReadyTimeout = TimeSpan.FromSeconds(45);
+
     private async Task WaitReadyAsync(CancellationToken token)
     {
         using var http = new HttpClient { Timeout = TimeSpan.FromSeconds(1) };
-        for (var attempt = 0; attempt < 150; attempt++)
+        // Generous: the self-hosted CI runner may be building another job on the same host.
+        var deadline = Stopwatch.StartNew();
+        while (deadline.Elapsed < ReadyTimeout)
         {
             try
             {
@@ -130,7 +134,7 @@ internal sealed class TropicastContainer : IAsyncDisposable
             }
             await Task.Delay(100, token);
         }
-        throw new IOException($"The Tropicast container did not become ready within 15 seconds. Logs:\n{await LogsAsync()}");
+        throw new IOException($"The Tropicast container did not become ready within {ReadyTimeout.TotalSeconds:0} seconds. Logs:\n{await LogsAsync()}");
     }
 
     internal string StatusUrl => $"http://127.0.0.1:{Port.ToString(CultureInfo.InvariantCulture)}/status-json.xsl";
