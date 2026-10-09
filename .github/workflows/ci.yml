@@ -227,7 +227,7 @@ jobs:
       - name: Package and smoke-test AppImage (Linux)
         if: runner.os == 'Linux'
         run: |
-          sudo apt-get -o DPkg::Lock::Timeout=300 install -y -qq xvfb desktop-file-utils
+          sudo apt-get -o DPkg::Lock::Timeout=300 install -y -qq xvfb xauth desktop-file-utils
           bash scripts/package-linux.sh
           image="$PWD/artifacts/package/Tropicast-Station-0.1.0-x86_64.AppImage"
           xvfb-run -a "$image" --appimage-extract-and-run > "$RUNNER_TEMP/tc-appimage.log" 2>&1 &
