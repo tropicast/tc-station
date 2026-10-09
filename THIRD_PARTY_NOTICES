@@ -15,6 +15,12 @@ LGPL version 2 or later. Statically linked into the FFmpeg executable.
 Source: https://downloads.sourceforge.net/project/lame/lame/3.100/lame-3.100.tar.gz
 SHA-256: ddfe36cab873794038ae2c1210557ad34857a4b6bdc515785d1da9e175b1da1e
 
+Opus 1.5.2 (libopus) - https://opus-codec.org/
+Copyright (c) the Xiph.Org Foundation and contributors (see source for individual notices).
+BSD 3-Clause License. Statically linked into the FFmpeg executable.
+Source: https://downloads.xiph.org/releases/opus/opus-1.5.2.tar.gz
+SHA-256: 65c1d2f78b9f2fb20082c38cbe47c951ad5839345876e46941612ee87f9a7ce1
+
 OpenSSL 3.5.4 (Linux only) - https://openssl.org/
 Copyright (c) 1998-2025 The OpenSSL Project Authors.
 Apache License 2.0. Statically linked; FFmpeg LGPLv3 permits this combination.

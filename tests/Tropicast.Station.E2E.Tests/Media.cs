@@ -15,11 +15,14 @@ internal static class Media
         using var http = new HttpClient();
         using var response = await http.GetAsync(profile.Endpoint, HttpCompletionOption.ResponseHeadersRead, token);
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
-        Assert.Equal("audio/mpeg", response.Content.Headers.ContentType?.MediaType);
+        Assert.Equal(profile.ContentType, response.Content.Headers.ContentType?.MediaType);
         await using var stream = await response.Content.ReadAsStreamAsync(token);
         using var captured = new MemoryStream();
         var buffer = new byte[8192];
-        while (captured.Length < profile.BitrateKbps * 1000 / 8 * seconds)
+        // Opus is VBR and spends well above its nominal bitrate on a pure test tone (~100 kbps at 64k),
+        // so read twice the nominal size; the decode check below still proves the duration.
+        var factor = profile.ContentType == "audio/ogg" ? 2 : 1;
+        while (captured.Length < profile.BitrateKbps * 1000 / 8 * seconds * factor)
         {
             var count = await stream.ReadAsync(buffer, token);
             Assert.True(count > 0, "The listener stream ended before enough audio arrived.");
@@ -28,13 +31,13 @@ internal static class Media
         await AssertDecodableAsync(captured.ToArray(), seconds - 0.3, profile, token);
     }
 
-    internal static async Task AssertDecodableAsync(byte[] mp3, double minimumSeconds, ConnectionProfile profile, CancellationToken token)
+    internal static async Task AssertDecodableAsync(byte[] audio, double minimumSeconds, ConnectionProfile profile, CancellationToken token)
     {
         var start = new ProcessStartInfo(FfmpegPath)
         {
             UseShellExecute = false, RedirectStandardInput = true, RedirectStandardOutput = true, RedirectStandardError = true,
         };
-        foreach (var argument in new[] { "-hide_banner", "-loglevel", "error", "-f", "mp3", "-i", "pipe:0",
+        foreach (var argument in new[] { "-hide_banner", "-loglevel", "error", "-f", profile.ContentType == "audio/ogg" ? "ogg" : "mp3", "-i", "pipe:0",
             "-c:a", "pcm_s16le", "-f", "wav", "pipe:1" })
         {
             start.ArgumentList.Add(argument);
@@ -45,7 +48,7 @@ internal static class Media
         var diagnostics = process.StandardError.ReadToEndAsync(token);
         try
         {
-            await process.StandardInput.BaseStream.WriteAsync(mp3, token);
+            await process.StandardInput.BaseStream.WriteAsync(audio, token);
             process.StandardInput.Close();
             await process.WaitForExitAsync(token);
             await read;

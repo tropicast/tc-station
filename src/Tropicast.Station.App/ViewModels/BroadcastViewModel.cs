@@ -34,12 +34,17 @@ public sealed partial class BroadcastViewModel : ViewModelBase, IDisposable
     [ObservableProperty] public partial bool IsReconnecting { get; set; }
     [ObservableProperty] public partial string ReconnectStatus { get; set; } = "";
     [ObservableProperty] public partial string Diagnostics { get; set; } = "Reconnects: 0; downtime: 00:00:00";
+    /// <summary>One line per published stream while more than one is configured, e.g. "MP3 /x/live.mp3: Live".</summary>
+    [ObservableProperty] public partial string OutputStatus { get; set; } = "";
+    public bool HasOutputStatus => OutputStatus.Length > 0;
     public string StateLabel => State.ToString();
     public string ActionLabel => IsActive ? "Stop broadcast" : "Go Live";
     public string TrayLabel => $"Tropicast Station — {StateLabel} ({Elapsed}){(IsReconnecting ? $" — {ReconnectStatus}" : "")}";
     public bool HasActiveBroadcast => _controller.Snapshot.IsActive;
     public string StreamSettings => _profiles.SelectedProfile is { } profile
-        ? $"{profile.BitrateKbps} kbps MP3, {profile.SampleRate} Hz, {(profile.Channels == 1 ? "mono" : "stereo")}. Stream name: {(profile.StreamName.Length == 0 ? "(not set)" : profile.StreamName)}"
+        ? $"{profile.BitrateKbps} kbps {(profile.ContentType == "audio/ogg" ? "Opus" : "MP3")}, {profile.SampleRate} Hz, {(profile.Channels == 1 ? "mono" : "stereo")}"
+            + (profile.PublishOpus ? $", plus {profile.OpusBitrateKbps} kbps Opus on {profile.OpusMount}" : "")
+            + $". Stream name: {(profile.StreamName.Length == 0 ? "(not set)" : profile.StreamName)}"
         : "Select a saved profile to see its stream settings.";
     private bool CanGoLive => !IsActive && !_disposed && !_confirming && !_profiles.IsBusy && !_audio.IsBusy
         && _profiles.SelectedProfile is not null && (_audio.SelectedInput ?? _audio.SelectedOutput) is not null;
@@ -145,6 +150,10 @@ public sealed partial class BroadcastViewModel : ViewModelBase, IDisposable
             : $"Attempt {snapshot.RetryAttempt} in {Math.Ceiling(snapshot.RetryIn.TotalSeconds):0} seconds.";
         Diagnostics = $"Reconnects: {snapshot.ReconnectCount}; downtime: {(int)snapshot.Downtime.TotalHours:00}:{snapshot.Downtime.Minutes:00}:{snapshot.Downtime.Seconds:00}";
         Status = snapshot.Message;
+        OutputStatus = snapshot.Outputs is { Count: > 1 } outputs && snapshot.IsActive
+            ? string.Join(Environment.NewLine, outputs.Select(o => $"{o.Codec} {o.Mount}: {o.State} — {o.Message}"))
+            : "";
+        OnPropertyChanged(nameof(HasOutputStatus));
         Elapsed = $"{(int)snapshot.Elapsed.TotalHours:00}:{snapshot.Elapsed.Minutes:00}:{snapshot.Elapsed.Seconds:00}";
         SetLocked(IsActive);
         OnPropertyChanged(nameof(StateLabel));

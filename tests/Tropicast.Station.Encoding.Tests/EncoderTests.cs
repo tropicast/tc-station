@@ -117,13 +117,105 @@ public sealed class EncoderTests
         await server.Done.WaitAsync(TimeSpan.FromSeconds(5), TestContext.Current.CancellationToken);
     }
 
-    [Fact]
-    public async Task MP3_requires_matching_profile_content_type()
+    [Theory]
+    [InlineData("audio/ogg", EncoderCodec.Mp3)]
+    [InlineData("audio/mpeg", EncoderCodec.Opus)]
+    public async Task Codec_requires_matching_profile_content_type(string contentType, EncoderCodec codec)
     {
         using var encoder = CreateEncoder();
-        var profile = new ConnectionProfile(Guid.NewGuid(), "Test", "127.0.0.1", 8000, "/test.mp3", ContentType: "audio/ogg");
+        var profile = new ConnectionProfile(Guid.NewGuid(), "Test", "127.0.0.1", 8000, "/test", ContentType: contentType, BitrateKbps: 64);
         await Assert.ThrowsAsync<ArgumentException>(() => encoder.StartAsync(new(profile, "test-only"),
+            new(bitrateKbps: 64, codec: codec), TestContext.Current.CancellationToken));
+        var aac = profile with { ContentType = "audio/aac" };
+        await Assert.ThrowsAsync<ArgumentException>(() => encoder.StartAsync(new(aac, "test-only"),
             cancellationToken: TestContext.Current.CancellationToken));
+    }
+
+    [Fact]
+    public void Opus_arguments_encode_ogg_at_48_kHz_from_any_capture_rate()
+    {
+        var args = FfmpegExecutable.Arguments(new(new(44100, 2), 64, EncoderCodec.Opus));
+        Assert.Equal(["-c:a", "libopus", "-b:a", "64k", "-application", "audio", "-ar", "48000"],
+            args.SkipWhile(a => a != "-c:a").Take(8));
+        Assert.Equal(["-f", "ogg", "pipe:1"], args.TakeLast(3));
+        Assert.DoesNotContain("libmp3lame", args);
+        Assert.Equal("audio/ogg", new EncoderOptions(codec: EncoderCodec.Opus, bitrateKbps: 48).ContentType);
+    }
+
+    [Theory]
+    [InlineData(EncoderCodec.Opus, 48, true)]
+    [InlineData(EncoderCodec.Opus, 96, true)]
+    [InlineData(EncoderCodec.Opus, 128, false)]
+    [InlineData(EncoderCodec.Mp3, 48, false)]
+    public void Bitrates_are_validated_per_codec(EncoderCodec codec, int bitrate, bool valid)
+    {
+        var create = () => new EncoderOptions(bitrateKbps: bitrate, codec: codec);
+        if (valid)
+        {
+            Assert.Equal(bitrate, create().BitrateKbps);
+        }
+        else
+        {
+            Assert.Throws<ArgumentOutOfRangeException>(create);
+        }
+    }
+
+    [Theory]
+    [InlineData(44100)]
+    [InlineData(48000)]
+    public async Task Bundled_encoder_publishes_decodable_Opus_with_its_own_headers(int captureRate)
+    {
+        RequireBundle();
+        await using var server = new FakeTropicast(mount: "/stations/42/live.opus");
+        var profile = server.Target.Profile with { SampleRate = captureRate };
+        using var encoder = CreateEncoder();
+        await using var session = await encoder.StartAsync(new(profile, server.Target.Password),
+            cancellationToken: TestContext.Current.CancellationToken);
+        var frame = TonePacket(captureRate);
+        using var timer = new PeriodicTimer(TimeSpan.FromMilliseconds(20));
+        for (var i = 0; i < 150; i++)
+        {
+            await timer.WaitForNextTickAsync(TestContext.Current.CancellationToken);
+            session.Submit(frame);
+        }
+        Assert.Contains("Opus", session.Snapshot.Message, StringComparison.Ordinal);
+        await session.StopAsync(TestContext.Current.CancellationToken);
+        await server.Done.WaitAsync(TimeSpan.FromSeconds(5), TestContext.Current.CancellationToken);
+        var header = await server.Header;
+        Assert.StartsWith("PUT /stations/42/live.opus HTTP/1.1\r\n", header, StringComparison.Ordinal);
+        Assert.Contains("Content-Type: audio/ogg\r\n", header, StringComparison.Ordinal);
+        Assert.Contains("Ice-Bitrate: 64\r\n", header, StringComparison.Ordinal);
+        Assert.Contains("Ice-Audio-Info: bitrate=64;samplerate=48000;channels=2\r\n", header, StringComparison.Ordinal);
+        Assert.Equal("OggS", System.Text.Encoding.ASCII.GetString(server.Audio.ToArray(), 0, 4));
+        await AssertDecodableAsync(server.Audio.ToArray(), 2.5, container: "ogg");
+    }
+
+    [Fact]
+    public async Task MP3_and_Opus_publish_side_by_side_from_one_capture()
+    {
+        RequireBundle();
+        await using var mp3Server = new FakeTropicast(mount: "/stations/42/live.mp3");
+        await using var opusServer = new FakeTropicast(mount: "/stations/42/live.opus");
+        using var encoder = CreateEncoder();
+        await using var mp3 = await encoder.StartAsync(mp3Server.Target, cancellationToken: TestContext.Current.CancellationToken);
+        await using var opus = await encoder.StartAsync(opusServer.Target,
+            EncoderOptions.FromProfile(mp3Server.Target.Profile).ForOutput(opusServer.Target.Profile), TestContext.Current.CancellationToken);
+        await Assert.ThrowsAsync<InvalidOperationException>(() => encoder.StartAsync(opusServer.Target,
+            cancellationToken: TestContext.Current.CancellationToken));
+        var frame = TonePacket();
+        using var timer = new PeriodicTimer(TimeSpan.FromMilliseconds(20));
+        for (var i = 0; i < 150; i++)
+        {
+            await timer.WaitForNextTickAsync(TestContext.Current.CancellationToken);
+            mp3.Submit(frame);
+            opus.Submit(frame);
+        }
+        await Task.WhenAll(mp3.StopAsync(TestContext.Current.CancellationToken), opus.StopAsync(TestContext.Current.CancellationToken));
+        await Task.WhenAll(mp3Server.Done, opusServer.Done).WaitAsync(TimeSpan.FromSeconds(5), TestContext.Current.CancellationToken);
+        Assert.Contains("Content-Type: audio/mpeg\r\n", await mp3Server.Header, StringComparison.Ordinal);
+        Assert.Contains("Content-Type: audio/ogg\r\n", await opusServer.Header, StringComparison.Ordinal);
+        await AssertDecodableAsync(mp3Server.Audio.ToArray(), 2.5);
+        await AssertDecodableAsync(opusServer.Audio.ToArray(), 2.5, container: "ogg");
     }
 
     [Theory]
@@ -412,13 +504,14 @@ public sealed class EncoderTests
         }
     }
 
-    internal static async Task AssertDecodableAsync(byte[] mp3, double minimumSeconds, int sampleRate = 48000, int channels = 2)
+    internal static async Task AssertDecodableAsync(byte[] audio, double minimumSeconds, int sampleRate = 48000, int channels = 2,
+        string container = "mp3")
     {
         var start = new ProcessStartInfo(new FfmpegExecutable().Path)
         {
             UseShellExecute = false, RedirectStandardInput = true, RedirectStandardOutput = true, RedirectStandardError = true,
         };
-        foreach (var argument in new[] { "-hide_banner", "-loglevel", "error", "-f", "mp3", "-i", "pipe:0",
+        foreach (var argument in new[] { "-hide_banner", "-loglevel", "error", "-f", container, "-i", "pipe:0",
             "-c:a", "pcm_s16le", "-f", "wav", "pipe:1" })
         {
             start.ArgumentList.Add(argument);
@@ -429,7 +522,7 @@ public sealed class EncoderTests
         var diagnostics = process.StandardError.ReadToEndAsync(TestContext.Current.CancellationToken);
         try
         {
-            await process.StandardInput.BaseStream.WriteAsync(mp3, TestContext.Current.CancellationToken);
+            await process.StandardInput.BaseStream.WriteAsync(audio, TestContext.Current.CancellationToken);
             process.StandardInput.Close();
             await process.WaitForExitAsync(TestContext.Current.CancellationToken);
             await read;
@@ -484,11 +577,14 @@ internal sealed class FakeTropicast : IAsyncDisposable
     internal Task Done { get; }
     internal Task<string> Header => _header.Task;
 
-    internal FakeTropicast(int status = 100, int? disconnectAfterBytes = null, bool finalAcknowledgement = false)
+    internal FakeTropicast(int status = 100, int? disconnectAfterBytes = null, bool finalAcknowledgement = false,
+        string mount = "/test.mp3")
     {
         _listener.Start();
+        var opus = mount.EndsWith(".opus", StringComparison.Ordinal);
         Target = new(new(Guid.NewGuid(), "Test source", "127.0.0.1",
-            ((IPEndPoint)_listener.LocalEndpoint).Port, "/test.mp3", SampleRate: 48000), "unique-test-password");
+            ((IPEndPoint)_listener.LocalEndpoint).Port, mount, SampleRate: 48000,
+            ContentType: opus ? "audio/ogg" : "audio/mpeg", BitrateKbps: opus ? 64 : 128), "unique-test-password");
         Done = ServeAsync(status, disconnectAfterBytes, finalAcknowledgement);
     }
 

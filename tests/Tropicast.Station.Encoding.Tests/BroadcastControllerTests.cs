@@ -277,6 +277,123 @@ public sealed class BroadcastControllerTests
         Assert.True(BroadcastController.CanRetry(new IOException("Unexpected child exit.")));
     }
 
+    private static bool BothLive(BroadcastController controller)
+        => controller.Snapshot.Outputs is { Count: 2 } outputs && outputs.All(o => o.State == BroadcastOutputState.Live);
+
+    private static ConnectionProfile DualProfile() => new(Guid.NewGuid(), "Dual", "127.0.0.1", 8000, "/stations/42/live.mp3",
+        PublishOpus: true, OpusBitrateKbps: 48);
+
+    [Fact]
+    public async Task Opus_output_is_published_alongside_MP3_from_one_capture()
+    {
+        var profile = DualProfile();
+        await using var capture = new AudioCaptureService(new ToneAudioCaptureProvider(), NullLogger<AudioCaptureService>.Instance);
+        var encoder = new MountEncoder();
+        using var controller = new BroadcastController(capture, new FixedTargets(profile), encoder, NullLogger<BroadcastController>.Instance);
+        await controller.StartAsync(profile.Id, "demo-input", cancellationToken: TestContext.Current.CancellationToken);
+        await UntilAsync(() => controller.Snapshot.State == BroadcastState.Live && BothLive(controller));
+        Assert.Equal("Live — publishing audio to Tropicast.", controller.Snapshot.Message);
+        Assert.Equal(["MP3 /stations/42/live.mp3", "Opus /stations/42/live.opus"],
+            controller.Snapshot.Outputs!.Select(o => $"{o.Codec} {o.Mount}"));
+        var mp3 = encoder.Requests.Single(r => r.Target.Profile.Mount.EndsWith(".mp3", StringComparison.Ordinal));
+        var opus = encoder.Requests.Single(r => r.Target.Profile.Mount.EndsWith(".opus", StringComparison.Ordinal));
+        Assert.Equal((EncoderCodec.Mp3, 128), (mp3.Options.Codec, mp3.Options.BitrateKbps));
+        Assert.Equal((EncoderCodec.Opus, 48), (opus.Options.Codec, opus.Options.BitrateKbps));
+        Assert.Equal(mp3.Options.Format, opus.Options.Format);
+        Assert.Equal("audio/ogg", opus.Target.Profile.ContentType);
+        Assert.True(encoder.Sessions["/stations/42/live.mp3"].Frames > 0);
+        Assert.True(encoder.Sessions["/stations/42/live.opus"].Frames > 0);
+        await controller.StopAsync(TestContext.Current.CancellationToken);
+        Assert.All(encoder.Sessions.Values, s => Assert.Equal(1, s.Disposals));
+    }
+
+    [Fact]
+    public async Task Rejected_Opus_output_does_not_stop_MP3()
+    {
+        var profile = DualProfile();
+        await using var capture = new AudioCaptureService(new ToneAudioCaptureProvider(), NullLogger<AudioCaptureService>.Instance);
+        var encoder = new MountEncoder
+        {
+            StartError = (mount, _) => mount.EndsWith(".opus", StringComparison.Ordinal)
+                ? new TropicastSourceException(ConnectionTestStatus.AuthenticationFailed, "Authentication failed. Check the source username and password.")
+                : null,
+        };
+        using var controller = new BroadcastController(capture, new FixedTargets(profile), encoder, NullLogger<BroadcastController>.Instance);
+        await controller.StartAsync(profile.Id, "demo-input", cancellationToken: TestContext.Current.CancellationToken);
+        await UntilAsync(() => controller.Snapshot.State == BroadcastState.Live);
+        var outputs = controller.Snapshot.Outputs!;
+        Assert.Equal(BroadcastOutputState.Live, outputs[0].State);
+        Assert.Equal(BroadcastOutputState.Failed, outputs[1].State);
+        Assert.Contains("Opus: Authentication failed", controller.Snapshot.Message, StringComparison.Ordinal);
+        await Task.Delay(1300, TestContext.Current.CancellationToken);
+        Assert.Equal(1, encoder.Starts["/stations/42/live.opus"]);
+        Assert.True(capture.Snapshot.IsCapturing);
+    }
+
+    [Fact]
+    public async Task Each_output_reconnects_on_its_own()
+    {
+        var profile = DualProfile();
+        await using var capture = new AudioCaptureService(new ToneAudioCaptureProvider(), NullLogger<AudioCaptureService>.Instance);
+        var encoder = new MountEncoder();
+        using var controller = new BroadcastController(capture, new FixedTargets(profile), encoder, NullLogger<BroadcastController>.Instance);
+        await controller.StartAsync(profile.Id, "demo-input", cancellationToken: TestContext.Current.CancellationToken);
+        await UntilAsync(() => BothLive(controller));
+        encoder.Sessions["/stations/42/live.opus"].Fail();
+        await UntilAsync(() => controller.Snapshot.Outputs![1].State == BroadcastOutputState.Reconnecting);
+        Assert.Equal(BroadcastState.Live, controller.Snapshot.State);
+        Assert.Equal(BroadcastOutputState.Live, controller.Snapshot.Outputs![0].State);
+        await UntilAsync(() => controller.Snapshot.Outputs![1].State == BroadcastOutputState.Live);
+        Assert.Equal(2, encoder.Starts["/stations/42/live.opus"]);
+        Assert.Equal(1, encoder.Starts["/stations/42/live.mp3"]);
+        Assert.Equal(1, controller.Snapshot.ReconnectCount);
+        Assert.Equal(TimeSpan.Zero, controller.Snapshot.Downtime);
+    }
+
+    [Fact]
+    public async Task Broadcast_fails_only_when_every_output_failed()
+    {
+        var profile = DualProfile();
+        await using var capture = new AudioCaptureService(new ToneAudioCaptureProvider(), NullLogger<AudioCaptureService>.Instance);
+        var encoder = new MountEncoder();
+        using var controller = new BroadcastController(capture, new FixedTargets(profile), encoder, NullLogger<BroadcastController>.Instance);
+        await controller.StartAsync(profile.Id, "demo-input", cancellationToken: TestContext.Current.CancellationToken);
+        await UntilAsync(() => BothLive(controller));
+        encoder.Sessions["/stations/42/live.mp3"].Fail(new EncoderException("Permanent MP3 failure."));
+        await UntilAsync(() => controller.Snapshot.Outputs![0].State == BroadcastOutputState.Failed);
+        Assert.Equal(BroadcastState.Live, controller.Snapshot.State);
+        encoder.Sessions["/stations/42/live.opus"].Fail(new EncoderException("Permanent Opus failure."));
+        await UntilAsync(() => controller.Snapshot.State == BroadcastState.Error);
+        Assert.Equal("Permanent MP3 failure.", controller.Snapshot.Message);
+        Assert.False(capture.Snapshot.IsCapturing);
+    }
+
+    internal sealed class MountEncoder : IBroadcastEncoder
+    {
+        private readonly object _sync = new();
+        internal List<(BroadcastTarget Target, EncoderOptions Options)> Requests { get; } = [];
+        internal Dictionary<string, MemoryEncoderSession> Sessions { get; } = [];
+        internal Dictionary<string, int> Starts { get; } = [];
+        internal Func<string, int, IOException?>? StartError { get; init; }
+
+        public Task<IEncoderSession> StartAsync(BroadcastTarget target, EncoderOptions? options = null, CancellationToken cancellationToken = default)
+        {
+            var mount = target.Profile.Mount;
+            lock (_sync)
+            {
+                Requests.Add((target, options!));
+                Starts[mount] = Starts.GetValueOrDefault(mount) + 1;
+                if (StartError?.Invoke(mount, Starts[mount]) is { } error)
+                {
+                    throw error;
+                }
+                var session = new MemoryEncoderSession();
+                Sessions[mount] = session;
+                return Task.FromResult<IEncoderSession>(session);
+            }
+        }
+    }
+
     internal static BroadcastController Create(AudioCaptureService capture, IBroadcastEncoder encoder)
         => new(capture, new FixedTargets(), encoder, NullLogger<BroadcastController>.Instance);
 

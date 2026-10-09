@@ -1,4 +1,5 @@
 using System.Diagnostics;
+using System.Runtime.ExceptionServices;
 using Microsoft.Extensions.Logging;
 using Tropicast.Station.Audio;
 using Tropicast.Station.Core.Broadcasting;
@@ -8,9 +9,12 @@ using Tropicast.Station.Infrastructure;
 namespace Tropicast.Station.Encoding;
 
 public enum BroadcastState { Idle, Connecting, Live, Reconnecting, Stopping, Error }
+public enum BroadcastOutputState { Connecting, Live, Reconnecting, Failed }
+/// <summary>Status of one published stream (for example the MP3 or the Opus mount).</summary>
+public sealed record BroadcastOutputSnapshot(string Codec, string Mount, BroadcastOutputState State, string Message);
 public sealed record BroadcastSnapshot(BroadcastState State, string Message, TimeSpan Elapsed,
     int RetryAttempt = 0, TimeSpan RetryIn = default, bool IsRetryConnecting = false,
-    int ReconnectCount = 0, TimeSpan Downtime = default)
+    int ReconnectCount = 0, TimeSpan Downtime = default, IReadOnlyList<BroadcastOutputSnapshot>? Outputs = null)
 {
     public bool IsActive => State is BroadcastState.Connecting or BroadcastState.Live or BroadcastState.Reconnecting or BroadcastState.Stopping;
 }
@@ -19,7 +23,11 @@ public sealed class BroadcastChangedEventArgs(BroadcastSnapshot snapshot) : Even
     public BroadcastSnapshot Snapshot { get; } = snapshot;
 }
 
-/// <summary>Owns capture and publishing, keeping capture alive during transient publisher failures.</summary>
+/// <summary>
+/// Owns capture and publishing, keeping capture alive during transient publisher failures. Each output of the
+/// profile (MP3, and Opus when enabled) has its own publisher and reconnects on its own; losing one output does
+/// not stop the others. The broadcast ends with an error only when every output has failed permanently.
+/// </summary>
 public sealed partial class BroadcastController(
     AudioCaptureService capture, IBroadcastTargetProvider targets, IBroadcastEncoder encoder,
     ILogger<BroadcastController> logger) : IDisposable
@@ -28,25 +36,34 @@ public sealed partial class BroadcastController(
     private readonly object _sync = new();
     private readonly Stopwatch _liveTime = new();
     private readonly Stopwatch _downtime = new();
-    private readonly Stopwatch _retryWait = new();
     private BroadcastSnapshot _snapshot = new(BroadcastState.Idle, "Select a saved profile and audio source.", TimeSpan.Zero);
     private CancellationTokenSource? _startCancellation;
     private CancellationTokenSource? _watchCancellation;
     private Task? _watcher;
-    private IEncoderSession? _session;
-    private BroadcastTarget? _target;
-    private EncoderOptions? _options;
-    private IOException? _frameFailure;
-    private TimeSpan _retryDelay;
-    private int _retryAttempt;
+    private Output[] _outputs = [];
     private int _reconnectCount;
-    private bool _retryConnecting;
-    private bool _sessionIsRetry;
     private bool _hasBeenLive;
     private bool _disposed;
 
     public BroadcastSnapshot Snapshot => Volatile.Read(ref _snapshot);
     public event EventHandler<BroadcastChangedEventArgs>? Changed;
+
+    /// <summary>One published stream and its retry state. Session and frame failure are shared with the capture thread.</summary>
+    private sealed class Output(BroadcastTarget target, EncoderOptions options)
+    {
+        internal BroadcastTarget Target { get; } = target;
+        internal EncoderOptions Options { get; } = options;
+        internal Stopwatch RetryWait { get; } = new();
+        internal IEncoderSession? Session;
+        internal IOException? FrameFailure;
+        internal Exception? Error;
+        internal TimeSpan RetryDelay;
+        internal int RetryAttempt;
+        internal bool RetryConnecting;
+        internal bool SessionIsRetry;
+        internal BroadcastOutputState State = BroadcastOutputState.Connecting;
+        internal string Message = "Connecting…";
+    }
 
     public async Task StartAsync(Guid profileId, string deviceId, EncoderOptions? options = null, CancellationToken cancellationToken = default)
     {
@@ -60,13 +77,8 @@ public sealed partial class BroadcastController(
             }
             _liveTime.Reset();
             _downtime.Reset();
-            _retryWait.Reset();
-            _retryAttempt = 0;
             _reconnectCount = 0;
             _hasBeenLive = false;
-            _sessionIsRetry = false;
-            _retryConnecting = false;
-            _frameFailure = null;
             using var starting = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
             lock (_sync)
             {
@@ -76,23 +88,40 @@ public sealed partial class BroadcastController(
             try
             {
                 await capture.StopAsync(starting.Token).ConfigureAwait(false);
-                _target = await targets.GetAsync(profileId, starting.Token).ConfigureAwait(false);
-                _options = options ?? EncoderOptions.FromProfile(_target.Profile);
-                await capture.StartAsync(deviceId, _options.Format, starting.Token).ConfigureAwait(false);
+                var target = await targets.GetAsync(profileId, starting.Token).ConfigureAwait(false);
+                var primary = options ?? EncoderOptions.FromProfile(target.Profile);
+                var outputs = target.Profile.Outputs()
+                    .Select((profile, index) => index == 0 ? new Output(target, primary)
+                        : new Output(new BroadcastTarget(profile, target.Password), primary.ForOutput(profile)))
+                    .ToArray();
+                await capture.StartAsync(deviceId, primary.Format, starting.Token).ConfigureAwait(false);
                 if (!capture.Snapshot.IsCapturing)
                 {
                     throw new EncoderException(capture.Snapshot.Message);
                 }
+                Volatile.Write(ref _outputs, outputs);
                 capture.FrameAvailable += OnFrame;
-                try
+                foreach (var output in outputs)
                 {
-                    Volatile.Write(ref _session, await encoder.StartAsync(_target, _options, starting.Token).ConfigureAwait(false));
-                }
-                catch (IOException ex) when (CanRetry(ex))
-                {
-                    ScheduleRetry(ex.Message);
+                    try
+                    {
+                        Volatile.Write(ref output.Session, await encoder.StartAsync(output.Target, output.Options, starting.Token).ConfigureAwait(false));
+                    }
+                    catch (IOException ex) when (CanRetry(ex))
+                    {
+                        ScheduleRetry(output, ex.Message);
+                    }
+                    catch (Exception ex) when (ex is IOException or InvalidOperationException or ArgumentException)
+                    {
+                        FailOutput(output, ex);
+                    }
                 }
                 starting.Token.ThrowIfCancellationRequested();
+                if (outputs.All(o => o.State == BroadcastOutputState.Failed))
+                {
+                    ExceptionDispatchInfo.Throw(outputs[0].Error!);
+                }
+                PublishOutputs();
                 lock (_sync)
                 {
                     _watchCancellation = new();
@@ -127,13 +156,16 @@ public sealed partial class BroadcastController(
 
     private void OnFrame(object? sender, PcmFrameEventArgs e)
     {
-        try
+        foreach (var output in Volatile.Read(ref _outputs))
         {
-            Volatile.Read(ref _session)?.Submit(e.Frame);
-        }
-        catch (IOException ex)
-        {
-            Interlocked.CompareExchange(ref _frameFailure, ex, null);
+            try
+            {
+                Volatile.Read(ref output.Session)?.Submit(e.Frame);
+            }
+            catch (IOException ex)
+            {
+                Interlocked.CompareExchange(ref output.FrameFailure, ex, null);
+            }
         }
     }
 
@@ -152,84 +184,17 @@ public sealed partial class BroadcastController(
                         await EndWithErrorAsync(capture.Snapshot.Message).ConfigureAwait(false);
                         return;
                     }
-                    if (_session is { } session)
+                    var outputs = Volatile.Read(ref _outputs);
+                    foreach (var output in outputs)
                     {
-                        IOException? failure = Volatile.Read(ref _frameFailure);
-                        if (session.Completion.IsCompleted)
-                        {
-                            try
-                            {
-                                await session.Completion.ConfigureAwait(false);
-                                failure ??= new IOException("The publisher ended unexpectedly.");
-                            }
-                            catch (IOException ex)
-                            {
-                                failure = ex;
-                            }
-                        }
-                        if (failure is not null)
-                        {
-                            _liveTime.Stop();
-                            if (_hasBeenLive)
-                            {
-                                _downtime.Start();
-                            }
-                            var releaseError = await ReleaseSessionAsync().ConfigureAwait(false);
-                            failure = releaseError is not null && !CanRetry(releaseError) ? releaseError : failure;
-                            if (!CanRetry(failure))
-                            {
-                                await EndWithErrorAsync(failure.Message).ConfigureAwait(false);
-                                return;
-                            }
-                            ScheduleRetry(failure.Message);
-                        }
-                        else if (session.Snapshot.State == EncoderState.Streaming)
-                        {
-                            if (!_liveTime.IsRunning)
-                            {
-                                _liveTime.Start();
-                                _downtime.Stop();
-                                if (_sessionIsRetry)
-                                {
-                                    _reconnectCount++;
-                                }
-                                _hasBeenLive = true;
-                                _sessionIsRetry = false;
-                                _retryConnecting = false;
-                                _retryAttempt = 0;
-                                _retryWait.Reset();
-                            }
-                            Publish(BroadcastState.Live, "Live — publishing audio to Tropicast.");
-                        }
+                        await CheckOutputAsync(output, token).ConfigureAwait(false);
                     }
-                    else if (Snapshot.State == BroadcastState.Reconnecting)
+                    if (outputs.Length > 0 && outputs.All(o => o.State == BroadcastOutputState.Failed))
                     {
-                        if (_retryWait.Elapsed < _retryDelay)
-                        {
-                            Publish(BroadcastState.Reconnecting, Snapshot.Message);
-                            continue;
-                        }
-                        _retryConnecting = true;
-                        Publish(BroadcastState.Reconnecting, $"Reconnect attempt {_retryAttempt}: connecting…");
-                        try
-                        {
-                            var next = await encoder.StartAsync(_target!, _options, token).ConfigureAwait(false);
-                            Interlocked.Exchange(ref _frameFailure, null);
-                            Volatile.Write(ref _session, next);
-                            _sessionIsRetry = true;
-                            // Live is confirmed only after the new publisher sends actual MP3 audio.
-                            Publish(BroadcastState.Reconnecting, $"Reconnect attempt {_retryAttempt}: waiting for audio…");
-                        }
-                        catch (IOException ex) when (CanRetry(ex))
-                        {
-                            ScheduleRetry(ex.Message);
-                        }
-                        catch (Exception ex) when (ex is IOException or InvalidOperationException or ArgumentException)
-                        {
-                            await EndWithErrorAsync(SafeMessage(ex)).ConfigureAwait(false);
-                            return;
-                        }
+                        await EndWithErrorAsync(outputs[0].Message).ConfigureAwait(false);
+                        return;
                     }
+                    PublishOutputs();
                 }
                 finally
                 {
@@ -238,6 +203,76 @@ public sealed partial class BroadcastController(
             }
         }
         catch (OperationCanceledException) when (token.IsCancellationRequested) { }
+    }
+
+    private async Task CheckOutputAsync(Output output, CancellationToken token)
+    {
+        if (output.Session is { } session)
+        {
+            IOException? failure = Volatile.Read(ref output.FrameFailure);
+            if (session.Completion.IsCompleted)
+            {
+                try
+                {
+                    await session.Completion.ConfigureAwait(false);
+                    failure ??= new IOException("The publisher ended unexpectedly.");
+                }
+                catch (IOException ex)
+                {
+                    failure = ex;
+                }
+            }
+            if (failure is not null)
+            {
+                var releaseError = await ReleaseSessionAsync(output).ConfigureAwait(false);
+                failure = releaseError is not null && !CanRetry(releaseError) ? releaseError : failure;
+                if (CanRetry(failure))
+                {
+                    ScheduleRetry(output, failure.Message);
+                }
+                else
+                {
+                    FailOutput(output, failure);
+                }
+            }
+            else if (session.Snapshot.State == EncoderState.Streaming && output.State != BroadcastOutputState.Live)
+            {
+                if (output.SessionIsRetry)
+                {
+                    _reconnectCount++;
+                }
+                output.State = BroadcastOutputState.Live;
+                output.Message = $"Live — publishing {output.Options.CodecName}.";
+                output.SessionIsRetry = false;
+                output.RetryConnecting = false;
+                output.RetryAttempt = 0;
+                output.RetryWait.Reset();
+                UpdateClocks();
+            }
+        }
+        else if (output.State == BroadcastOutputState.Reconnecting && output.RetryWait.Elapsed >= output.RetryDelay)
+        {
+            output.RetryConnecting = true;
+            output.Message = $"Reconnect attempt {output.RetryAttempt}: connecting…";
+            PublishOutputs();
+            try
+            {
+                var next = await encoder.StartAsync(output.Target, output.Options, token).ConfigureAwait(false);
+                Interlocked.Exchange(ref output.FrameFailure, null);
+                Volatile.Write(ref output.Session, next);
+                output.SessionIsRetry = true;
+                // Live is confirmed only after the new publisher sends actual audio.
+                output.Message = $"Reconnect attempt {output.RetryAttempt}: waiting for audio…";
+            }
+            catch (IOException ex) when (CanRetry(ex))
+            {
+                ScheduleRetry(output, ex.Message);
+            }
+            catch (Exception ex) when (ex is IOException or InvalidOperationException or ArgumentException)
+            {
+                FailOutput(output, ex);
+            }
+        }
     }
 
     internal static TimeSpan Backoff(int attempt, double jitter)
@@ -250,19 +285,47 @@ public sealed partial class BroadcastController(
         _ => true,
     };
 
-    private void ScheduleRetry(string message)
+    private void ScheduleRetry(Output output, string message)
     {
-        _liveTime.Stop();
-        if (_hasBeenLive)
-        {
-            _downtime.Start();
-        }
-        _retryAttempt++;
-        _retryDelay = Backoff(_retryAttempt, Random.Shared.NextDouble());
-        _retryWait.Restart();
-        _retryConnecting = false;
+        output.RetryAttempt++;
+        output.RetryDelay = Backoff(output.RetryAttempt, Random.Shared.NextDouble());
+        output.RetryWait.Restart();
+        output.RetryConnecting = false;
+        output.State = BroadcastOutputState.Reconnecting;
+        output.Message = $"{message} Automatic retry is scheduled; capture continues.";
         LogFailure(logger, "TransientConnectionFailure");
-        Publish(BroadcastState.Reconnecting, $"{message} Automatic retry is scheduled; capture continues.");
+        UpdateClocks();
+        PublishOutputs();
+    }
+
+    private void FailOutput(Output output, Exception error)
+    {
+        output.Error = error;
+        output.State = BroadcastOutputState.Failed;
+        output.Message = SafeMessage(error);
+        output.RetryConnecting = false;
+        output.RetryWait.Reset();
+        LogFailure(logger, error.GetType().Name);
+        UpdateClocks();
+    }
+
+    /// <summary>Live time runs while any output is live; downtime runs while none is, after the first live.</summary>
+    private void UpdateClocks()
+    {
+        if (Volatile.Read(ref _outputs).Any(o => o.State == BroadcastOutputState.Live))
+        {
+            _liveTime.Start();
+            _downtime.Stop();
+            _hasBeenLive = true;
+        }
+        else
+        {
+            _liveTime.Stop();
+            if (_hasBeenLive)
+            {
+                _downtime.Start();
+            }
+        }
     }
 
     public async Task RetryNowAsync(CancellationToken cancellationToken = default)
@@ -271,12 +334,18 @@ public sealed partial class BroadcastController(
         try
         {
             ObjectDisposedException.ThrowIf(_disposed, this);
-            if (Snapshot.State != BroadcastState.Reconnecting || _session is not null)
+            var waiting = Volatile.Read(ref _outputs)
+                .Where(o => o.State == BroadcastOutputState.Reconnecting && o.Session is null && !o.RetryConnecting).ToArray();
+            if (waiting.Length == 0)
             {
                 return;
             }
-            _retryDelay = TimeSpan.Zero;
-            Publish(BroadcastState.Reconnecting, "Retry now requested; connecting…");
+            foreach (var output in waiting)
+            {
+                output.RetryDelay = TimeSpan.Zero;
+                output.Message = "Retry now requested; connecting…";
+            }
+            PublishOutputs();
         }
         finally
         {
@@ -321,9 +390,9 @@ public sealed partial class BroadcastController(
         }
     }
 
-    private async Task<IOException?> ReleaseSessionAsync()
+    private async Task<IOException?> ReleaseSessionAsync(Output output)
     {
-        var session = Interlocked.Exchange(ref _session, null);
+        var session = Interlocked.Exchange(ref output.Session, null);
         if (session is null)
         {
             return null;
@@ -340,7 +409,7 @@ public sealed partial class BroadcastController(
         }
         finally
         {
-            Interlocked.Exchange(ref _frameFailure, null);
+            Interlocked.Exchange(ref output.FrameFailure, null);
         }
     }
 
@@ -353,17 +422,20 @@ public sealed partial class BroadcastController(
         }
         _liveTime.Stop();
         _downtime.Stop();
-        _retryWait.Reset();
-        _retryConnecting = false;
         await capture.StopAsync(CancellationToken.None).ConfigureAwait(false);
-        var error = await ReleaseSessionAsync().ConfigureAwait(false);
+        IOException? error = null;
+        foreach (var output in Volatile.Read(ref _outputs))
+        {
+            output.RetryWait.Reset();
+            output.RetryConnecting = false;
+            error ??= await ReleaseSessionAsync(output).ConfigureAwait(false);
+        }
         lock (_sync)
         {
             _watchCancellation?.Dispose();
             _watchCancellation = null;
         }
-        _target = null;
-        _options = null;
+        Volatile.Write(ref _outputs, []);
         return error?.Message;
     }
 
@@ -371,15 +443,44 @@ public sealed partial class BroadcastController(
     {
         IOException or SecretStoreException => ex.Message,
         InvalidOperationException => "The selected profile has no valid credentials or broadcasting is already active. Check the saved profile.",
-        _ => "The broadcast settings are invalid. Select an MP3 profile and supported audio format.",
+        _ => "The broadcast settings are invalid. Select an MP3 or Opus profile and supported audio format.",
     };
+
+    /// <summary>Publishes the overall state from the outputs: live if any output is live.</summary>
+    private void PublishOutputs()
+    {
+        var outputs = Volatile.Read(ref _outputs);
+        var live = outputs.Where(o => o.State == BroadcastOutputState.Live).ToArray();
+        if (live.Length == outputs.Length && live.Length > 0)
+        {
+            Publish(BroadcastState.Live, "Live — publishing audio to Tropicast.");
+        }
+        else if (live.Length > 0)
+        {
+            var others = outputs.Where(o => o.State != BroadcastOutputState.Live)
+                .Select(o => $"{o.Options.CodecName}: {o.Message}");
+            Publish(BroadcastState.Live, $"Live — publishing {string.Join(" and ", live.Select(o => o.Options.CodecName))}. {string.Join(" ", others)}");
+        }
+        else if (outputs.FirstOrDefault(o => o.State == BroadcastOutputState.Reconnecting) is { } reconnecting)
+        {
+            Publish(BroadcastState.Reconnecting, reconnecting.Message);
+        }
+        else if (Snapshot.State != BroadcastState.Connecting)
+        {
+            Publish(BroadcastState.Connecting, "Connecting to the saved profile…");
+        }
+    }
 
     private void Publish(BroadcastState state, string message)
     {
-        var retryIn = state == BroadcastState.Reconnecting && _session is null && !_retryConnecting
-            ? _retryDelay - _retryWait.Elapsed : TimeSpan.Zero;
-        var snapshot = new BroadcastSnapshot(state, message, _liveTime.Elapsed, _retryAttempt,
-            retryIn > TimeSpan.Zero ? retryIn : TimeSpan.Zero, _retryConnecting, _reconnectCount, _downtime.Elapsed);
+        var outputs = Volatile.Read(ref _outputs);
+        // Retry details describe the first output that is reconnecting.
+        var focus = state == BroadcastState.Reconnecting
+            ? outputs.FirstOrDefault(o => o.State == BroadcastOutputState.Reconnecting) : null;
+        var retryIn = focus is { Session: null, RetryConnecting: false } ? focus.RetryDelay - focus.RetryWait.Elapsed : TimeSpan.Zero;
+        var snapshot = new BroadcastSnapshot(state, message, _liveTime.Elapsed, focus?.RetryAttempt ?? 0,
+            retryIn > TimeSpan.Zero ? retryIn : TimeSpan.Zero, focus?.RetryConnecting ?? false, _reconnectCount, _downtime.Elapsed,
+            [.. outputs.Select(o => new BroadcastOutputSnapshot(o.Options.CodecName, o.Target.Profile.Mount, o.State, o.Message))]);
         Volatile.Write(ref _snapshot, snapshot);
         if (snapshot.State != _lastLoggedState)
         {

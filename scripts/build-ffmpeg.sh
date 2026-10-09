@@ -30,8 +30,11 @@ download https://ffmpeg.org/releases/ffmpeg-8.0.1.tar.xz ffmpeg-8.0.1.tar.xz \
   05ee0b03119b45c0bdb4df654b96802e909e0a752f72e4fe3794f487229e5a41
 download https://downloads.sourceforge.net/project/lame/lame/3.100/lame-3.100.tar.gz lame-3.100.tar.gz \
   ddfe36cab873794038ae2c1210557ad34857a4b6bdc515785d1da9e175b1da1e
+download https://downloads.xiph.org/releases/opus/opus-1.5.2.tar.gz opus-1.5.2.tar.gz \
+  65c1d2f78b9f2fb20082c38cbe47c951ad5839345876e46941612ee87f9a7ce1
 tar -xf "$work/ffmpeg-8.0.1.tar.xz" -C "$work"
 tar -xf "$work/lame-3.100.tar.gz" -C "$work"
+tar -xf "$work/opus-1.5.2.tar.gz" -C "$work"
 host=()
 arch=()
 linkFlags="-L$prefix/lib"
@@ -44,6 +47,13 @@ esac
   cd "$work/lame-3.100"
   ./configure --prefix="$prefix" --disable-shared --enable-static --disable-frontend \
     --disable-dependency-tracking "${host[@]}"
+  make -j"$jobs"
+  make install
+)
+(
+  cd "$work/opus-1.5.2"
+  ./configure --prefix="$prefix" --disable-shared --enable-static --disable-doc \
+    --disable-extra-programs --disable-dependency-tracking "${host[@]}"
   make -j"$jobs"
   make install
 )
@@ -65,8 +75,9 @@ fi
   ./configure --prefix="$prefix" --disable-autodetect --disable-everything \
     --disable-doc --disable-debug --disable-ffplay --disable-ffprobe --disable-x86asm \
     --enable-static --disable-shared --enable-version3 --enable-ffmpeg --enable-network \
-    --enable-libmp3lame --enable-encoder=libmp3lame,pcm_s16le --enable-decoder=pcm_f32le,mp3 \
-    --enable-demuxer=pcm_f32le,mp3 --enable-parser=mpegaudio --enable-muxer=mp3,wav \
+    --enable-libmp3lame --enable-libopus --enable-encoder=libmp3lame,libopus,pcm_s16le \
+    --enable-decoder=pcm_f32le,mp3,libopus --enable-demuxer=pcm_f32le,mp3,ogg \
+    --enable-parser=mpegaudio,opus --enable-muxer=mp3,ogg,wav \
     --enable-filter=aresample,aformat,anull --enable-protocol=pipe,file,tcp,udp,tls,http,https,icecast \
     --pkg-config-flags=--static --extra-cflags="-I$prefix/include" \
     --cc="${CC:-cc}" --extra-ldflags="$linkFlags" "${tls[@]}" "${arch[@]}"
@@ -76,9 +87,12 @@ cp "$work/ffmpeg-8.0.1/ffmpeg$suffix" "$output/ffmpeg$suffix"
 cp "$work/ffmpeg-8.0.1/COPYING.LGPLv3" "$output/licenses/FFmpeg-LGPL-3.0.txt"
 cp "$work/ffmpeg-8.0.1/COPYING.GPLv3" "$output/licenses/GPL-3.0-referenced-by-LGPL.txt"
 cp "$work/lame-3.100/COPYING" "$output/licenses/LAME-LGPL-2.0.txt"
+cp "$work/opus-1.5.2/COPYING" "$output/licenses/Opus-BSD-3-Clause.txt"
 cp "$root/THIRD_PARTY_NOTICES" "$output/"
 cp "$root/scripts/build-ffmpeg.sh" "$output/sources/"
 "$output/ffmpeg$suffix" -hide_banner -encoders 2>&1 | grep libmp3lame
+"$output/ffmpeg$suffix" -hide_banner -encoders 2>&1 | grep libopus
+"$output/ffmpeg$suffix" -hide_banner -muxers 2>&1 | grep -w ogg
 "$output/ffmpeg$suffix" -hide_banner -protocols 2>&1 | grep -w tls
 "$output/ffmpeg$suffix" -hide_banner -demuxers 2>&1 | grep -w f32le
 echo "Built LGPL FFmpeg bundle: $output"

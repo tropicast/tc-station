@@ -5,7 +5,7 @@ namespace Tropicast.Station.Encoding;
 
 public static class ServiceCollectionExtensions
 {
-    /// <summary>Registers the MP3 encoder; credentials are handled by the managed Icecast publisher.</summary>
+    /// <summary>Registers the MP3 and Opus encoder; credentials are handled by the managed Icecast publisher.</summary>
     public static IServiceCollection AddStationEncoding(this IServiceCollection services)
     {
         ArgumentNullException.ThrowIfNull(services);

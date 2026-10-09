@@ -160,7 +160,7 @@ Notes:
 
 ## License obligations
 
-FFmpeg/LAME/OpenSSL are redistributed under the licenses in `THIRD_PARTY_NOTICES`. Each package
+FFmpeg/LAME/Opus/OpenSSL are redistributed under the licenses in `THIRD_PARTY_NOTICES`. Each package
 contains the notices, the corresponding source archives, full license texts and the build script
 (in `ffmpeg/` next to the app; Windows and Linux packages also carry the root notices file, and the
 DMG carries it beside the app). The application's own license is not yet decided; a distribution
