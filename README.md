@@ -29,7 +29,7 @@ bash scripts/build-ffmpeg.sh linux-x64  # or linux-arm64, osx-arm64, osx-x64
 dotnet build -c Release
 ```
 
-Windows: run `bash scripts/build-ffmpeg.sh win-x64` from MSYS2 **MINGW64** shell with MinGW GCC/pkgconf, make, Perl, curl, tar. Script builds only FFmpeg/LAME + Linux OpenSSL, not .NET app. Native Linux builds use build host's libc baseline; build release bundles on oldest supported distro. Linux arm64 = native build, not x64 cross-build. macOS builds target either CPU arch, need Xcode tools. Sources checksum-pinned; intermediate outputs under ignored `artifacts/`.
+Windows: run `bash scripts/build-ffmpeg.sh win-x64` from MSYS2 **MINGW64** shell with MinGW GCC/pkgconf, make, Perl, curl, tar. Script builds only FFmpeg/LAME/Opus + Linux OpenSSL, not .NET app. Native Linux builds use build host's libc baseline; build release bundles on oldest supported distro. Linux arm64 = native build, not x64 cross-build. macOS builds target either CPU arch, need Xcode tools. Sources checksum-pinned; intermediate outputs under ignored `artifacts/`.
 
 ## Solution layout
 
@@ -41,7 +41,7 @@ Windows: run `bash scripts/build-ffmpeg.sh win-x64` from MSYS2 **MINGW64** shell
 | `src/Tropicast.Station.Audio.Windows` | WASAPI shared-mode input + render-endpoint loopback via NAudio |
 | `src/Tropicast.Station.Audio.Linux` | PulseAudio/pipewire-pulse sources + sink monitors via libpulse clients |
 | `src/Tropicast.Station.Audio.MacOS` | Core Audio input + ScreenCaptureKit system audio via native Apple-framework bridge |
-| `src/Tropicast.Station.Encoding` | Bounded float32→MP3 FFmpeg child + credential-safe Icecast publisher |
+| `src/Tropicast.Station.Encoding` | Bounded float32→MP3/Opus FFmpeg children + credential-safe Icecast publishers |
 | `src/Tropicast.Station.Infrastructure` | JSON profiles, OS credential stores, Icecast connection testing |
 | `tests/Tropicast.Station.Core.Tests` | Unit tests for class libs |
 | `tests/Tropicast.Station.App.Tests` | Headless Avalonia UI tests |
@@ -159,7 +159,7 @@ FFmpeg reads raw float32 on stdin, writes MP3 on stdout. Managed publisher share
 
 Stop completes PCM queue + closes stdin, letting FFmpeg flush MP3. Shutdown >5 s → owned process tree killed + reaped. DI host dispose stops active session even if caller forgot. Child owns no server connection: if parent exits abruptly, redirected stdin/stdout/stderr pipes close; EOF/broken pipes make FFmpeg exit, no lingering connected source. Publisher disconnects with parent's socket. Graceful exit + failures observe all pipe tasks before disposing native streams.
 
-App loads only `ffmpeg/ffmpeg` (`ffmpeg.exe` on Windows) relative to app dir, never arbitrary PATH executable. Build/publish copies RID-specific bundle, **including corresponding sources and full licenses**. Minimal build includes LAME + TLS (OpenSSL on Linux, Schannel on Windows, Secure Transport on macOS), no GPL-only/nonfree features. See [`THIRD_PARTY_NOTICES`](THIRD_PARTY_NOTICES) for versions, hashes, licensing, redistribution obligations. Users can replace/rebuild this separate executable; commercial distribution still needs packaging/license review.
+App loads only `ffmpeg/ffmpeg` (`ffmpeg.exe` on Windows) relative to app dir, never arbitrary PATH executable. Build/publish copies RID-specific bundle, **including corresponding sources and full licenses**. Minimal build includes LAME, Opus + TLS (OpenSSL on Linux, Schannel on Windows, Secure Transport on macOS), no GPL-only/nonfree features. See [`THIRD_PARTY_NOTICES`](THIRD_PARTY_NOTICES) for versions, hashes, licensing, redistribution obligations. Users can replace/rebuild this separate executable; commercial distribution still needs packaging/license review.
 
 After building bundle, `dotnet test tests/Tropicast.Station.Encoding.Tests` exercises real encoding, decode, auth/mount status mapping, queue errors, network disconnect, graceful/forced process cleanup, owner dispose. Without bundle, native codec tests explicitly skip; CI requires one. For real listener POC, run local Icecast with source password `tc-test-source` and set its port:
 
@@ -212,7 +212,9 @@ Profile = name, hostname/IP (no scheme/port), port, mount path (e.g. `/live.mp3`
 
 Optional **stream name**, **description**, **genre**, **website URL** identify stream to listeners. Profile name labels local saved connection; distinct from public stream name. Values sent with authenticated source handshake as `Ice-Name`, `Ice-Description`, `Ice-Genre`, `Ice-URL`, `Ice-Bitrate` and `Ice-Audio-Info`. Metadata resent every reconnect. Icecast's `/status-json.xsl` exposes `server_name`, `server_description`, `genre`, `server_url` and `bitrate` while mount live. Blank optional metadata omitted → server defaults.
 
-Names/genres ≤128 chars, descriptions/URLs ≤512. Control chars rejected; website URLs must be absolute HTTP/HTTPS without credentials. Metadata public: never put passwords/secrets there. Encoder stays MP3-only though profiles support other content types for connection testing.
+Names/genres ≤128 chars, descriptions/URLs ≤512. Control chars rejected; website URLs must be absolute HTTP/HTTPS without credentials. Metadata public: never put passwords/secrets there. Encoder publishes MP3 (`audio/mpeg`) or Ogg Opus (`audio/ogg`, 48/64/96 kbps, always 48 kHz); `audio/aac` profiles are for connection testing only.
+
+**Also publish Ogg Opus** (MP3 profiles whose mount ends in `.mp3`) adds a second stream from the same capture on the matching `.opus` mount (`/stations/42/live.mp3` → `/stations/42/live.opus`) at the profile's **Opus bitrate** (default 64 kbps; 48 kbps on the free plan). Each stream has its own FFmpeg child, `PUT` with its own `Content-Type`, `Ice-Bitrate` and `Ice-Audio-Info`, and its own reconnect backoff: losing or being refused one stream (e.g. the station's plan allows only MP3, so Tropicast answers 401 on `.opus`) does not stop the other. The broadcast stays **Live** while any stream is live, the Broadcast tab lists each stream's state, and the broadcast ends in **Error** only when every stream has failed permanently.
 
 **Save profile** writes non-secret settings to user's app-data dir:
 
@@ -292,7 +294,7 @@ Same opt-in server harness verifies stream metadata against `status-json.xsl`, t
 
 ### End-to-end suite (Tropicast container)
 
-`tests/Tropicast.Station.E2E.Tests` proves whole pipeline against real Tropicast Icecast image (built from `tests/Tropicast.Station.E2E.Tests/docker`): synthetic tone capture, bundled FFmpeg encoder, source handshake, listener whose MP3 decoded + checked for non-silent audio. Each test starts own container on ephemeral loopback port with fresh random creds, removes it after. Scenarios: go-live + stop, unattended recovery after server restart, wrong password, mount already in use (first source keeps playing), unreachable host.
+`tests/Tropicast.Station.E2E.Tests` proves whole pipeline against real Tropicast Icecast image (built from `tests/Tropicast.Station.E2E.Tests/docker`): synthetic tone capture, bundled FFmpeg encoder, source handshake, listener whose MP3 decoded + checked for non-silent audio. Each test starts own container on ephemeral loopback port with fresh random creds, removes it after. Scenarios: go-live + stop, MP3 and Opus from one capture (both listeners decoded), unattended recovery after server restart, wrong password, mount already in use (first source keeps playing), unreachable host.
 
 ```bash
 bash scripts/build-ffmpeg.sh linux-x64   # once

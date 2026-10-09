@@ -18,11 +18,13 @@ public sealed partial class ProfileEditorViewModel(
     [
         nameof(Name), nameof(Host), nameof(Port), nameof(Mount), nameof(Username), nameof(UseTls), nameof(ContentType), nameof(Password),
         nameof(BitrateKbps), nameof(SampleRate), nameof(Channels), nameof(StreamName), nameof(StreamDescription), nameof(StreamGenre), nameof(StreamUrl),
+        nameof(PublishOpus), nameof(OpusBitrateKbps),
     ];
 
     public ObservableCollection<ConnectionProfile> Profiles { get; } = [];
     public IReadOnlyList<string> ContentTypes { get; } = ["audio/mpeg", "audio/aac", "audio/ogg"];
     public IReadOnlyList<int> Bitrates { get; } = [64, 96, 128, 192, 320];
+    public IReadOnlyList<int> OpusBitrates { get; } = [48, 64, 96];
     public IReadOnlyList<int> SampleRates { get; } = [44100, 48000];
     public IReadOnlyList<int> ChannelCounts { get; } = [1, 2];
 
@@ -42,6 +44,8 @@ public sealed partial class ProfileEditorViewModel(
     [ObservableProperty] public partial string StreamDescription { get; set; } = "";
     [ObservableProperty] public partial string StreamGenre { get; set; } = "";
     [ObservableProperty] public partial string StreamUrl { get; set; } = "";
+    [ObservableProperty] public partial bool PublishOpus { get; set; }
+    [ObservableProperty] public partial int OpusBitrateKbps { get; set; } = 64;
     [ObservableProperty] public partial string ValidationMessage { get; set; } = "Enter a profile name and source password.";
     [ObservableProperty] public partial string Status { get; set; } = "";
     [ObservableProperty] public partial bool IsBusy { get; set; }
@@ -77,7 +81,7 @@ public sealed partial class ProfileEditorViewModel(
     private ConnectionProfile Draft() => new(_id, Name.Trim(), Host.Trim().Trim('[', ']'),
         int.TryParse(Port, NumberStyles.None, CultureInfo.InvariantCulture, out var port) ? port : 0,
         Mount.Trim(), Username.Trim(), UseTls, ContentType, BitrateKbps, SampleRate, Channels,
-        StreamName.Trim(), StreamDescription.Trim(), StreamGenre.Trim(), StreamUrl.Trim());
+        StreamName.Trim(), StreamDescription.Trim(), StreamGenre.Trim(), StreamUrl.Trim(), PublishOpus, OpusBitrateKbps);
 
     private void Validate()
     {
@@ -122,6 +126,8 @@ public sealed partial class ProfileEditorViewModel(
         StreamDescription = "";
         StreamGenre = "";
         StreamUrl = "";
+        PublishOpus = false;
+        OpusBitrateKbps = 64;
         Password = "";
         Status = "New profile.";
         OnPropertyChanged(nameof(PasswordHint));
@@ -149,6 +155,8 @@ public sealed partial class ProfileEditorViewModel(
         StreamDescription = profile.StreamDescription;
         StreamGenre = profile.StreamGenre;
         StreamUrl = profile.StreamUrl;
+        PublishOpus = profile.PublishOpus;
+        OpusBitrateKbps = profile.OpusBitrateKbps;
         Password = "";
         Status = "Editing saved profile.";
         OnPropertyChanged(nameof(PasswordHint));

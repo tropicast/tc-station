@@ -40,6 +40,8 @@ public sealed partial class Diagnostics(SafeLogProvider logs, IAppInfo appInfo, 
             {
                 State = snapshot.State.ToString(), snapshot.ReconnectCount, snapshot.RetryAttempt,
                 DowntimeSeconds = snapshot.Downtime.TotalSeconds, ElapsedSeconds = snapshot.Elapsed.TotalSeconds,
+                // Codec and state only: mounts identify the station.
+                Outputs = (snapshot.Outputs ?? []).Select(o => new { o.Codec, State = o.State.ToString() }).ToArray(),
             },
             LogWriteFailure = logs.HasWriteFailure,
             Privacy = "No profiles, credentials, endpoints, metadata, device names/IDs, paths, raw exception text, command lines or audio.",

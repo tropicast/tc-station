@@ -39,6 +39,35 @@ public sealed class PipelineE2ETests
     }
 
     [Fact]
+    public async Task MP3_and_Opus_go_live_from_one_capture_and_listeners_decode_both()
+    {
+        E2EEnvironment.Require(needsContainer: true);
+        using var deadline = Deadline(60);
+        await using var server = await TropicastContainer.StartAsync(deadline.Token);
+        var profile = Profile(server.Port) with { PublishOpus = true, OpusBitrateKbps = 64 };
+        var opus = profile.Outputs()[1];
+        await using var station = new Rig(profile, server.SourcePassword);
+
+        await station.Controller.StartAsync(profile.Id, DemoInput, cancellationToken: deadline.Token);
+        await Eventually.Async(() => station.Controller.Snapshot.Outputs is { Count: 2 } outputs
+                && outputs.All(o => o.State == BroadcastOutputState.Live),
+            "both outputs to go Live", station.Describe, deadline.Token);
+        await Eventually.Async(async () =>
+            {
+                var mounts = await server.ActiveMountsAsync(deadline.Token);
+                return mounts.Contains(profile.Mount) && mounts.Contains(opus.Mount);
+            },
+            $"{profile.Mount} and {opus.Mount} to be active sources on Tropicast", station.Describe, deadline.Token);
+
+        await Media.AssertListenerHearsAudioAsync(profile, 2, deadline.Token);
+        await Media.AssertListenerHearsAudioAsync(opus, 2, deadline.Token);
+
+        await station.Controller.StopAsync(deadline.Token);
+        await Eventually.Async(async () => (await server.ActiveMountsAsync(deadline.Token)).Count == 0,
+            "both mounts to be released after Stop", station.Describe, deadline.Token);
+    }
+
+    [Fact]
     public async Task Restarting_the_server_while_live_recovers_without_user_action()
     {
         E2EEnvironment.Require(needsContainer: true);

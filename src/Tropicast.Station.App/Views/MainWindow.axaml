@@ -46,6 +46,8 @@
                 <Button x:Name="RetryNowButton" Content="Retry now" Command="{Binding RetryNowCommand}"
                         AutomationProperties.Name="Retry now" />
               </StackPanel>
+              <TextBlock x:Name="OutputStatus" Text="{Binding OutputStatus}" TextWrapping="Wrap"
+                         IsVisible="{Binding HasOutputStatus}" AutomationProperties.Name="{Binding OutputStatus}" />
               <TextBlock Text="{Binding Diagnostics}" AutomationProperties.Name="{Binding Diagnostics}" Opacity="0.7" />
             </StackPanel>
           <Grid ColumnDefinitions="*,280">
@@ -115,7 +117,7 @@
           <TextBlock Text="{Binding TransportWarning}" TextWrapping="Wrap" />
           <TextBlock Text="Content type" />
           <ComboBox ItemsSource="{Binding ContentTypes}" SelectedItem="{Binding ContentType}" AutomationProperties.Name="Content type" />
-          <TextBlock Text="MP3 encoder settings (saved with this profile)" FontWeight="Bold" />
+          <TextBlock Text="Encoder settings (saved with this profile)" FontWeight="Bold" />
           <WrapPanel>
             <TextBlock Text="Bitrate (kbps)" VerticalAlignment="Center" Margin="0,0,8,6" />
             <ComboBox x:Name="ProfileBitrate" ItemsSource="{Binding Bitrates}" SelectedItem="{Binding BitrateKbps}"
@@ -126,6 +128,13 @@
             <TextBlock Text="Channels (1 mono / 2 stereo)" VerticalAlignment="Center" Margin="0,0,8,6" />
             <ComboBox x:Name="ProfileChannels" ItemsSource="{Binding ChannelCounts}" SelectedItem="{Binding Channels}"
                       AutomationProperties.Name="Profile channels: 1 mono, 2 stereo" Margin="0,0,16,6" />
+          </WrapPanel>
+          <CheckBox x:Name="PublishOpusInput" Content="Also publish Ogg Opus (.opus mount) for mobile listeners"
+                    IsChecked="{Binding PublishOpus}" AutomationProperties.Name="Also publish Ogg Opus" />
+          <WrapPanel IsVisible="{Binding PublishOpus}">
+            <TextBlock Text="Opus bitrate (kbps)" VerticalAlignment="Center" Margin="0,0,8,6" />
+            <ComboBox x:Name="ProfileOpusBitrate" ItemsSource="{Binding OpusBitrates}" SelectedItem="{Binding OpusBitrateKbps}"
+                      AutomationProperties.Name="Opus bitrate in kbps" Margin="0,0,16,6" />
           </WrapPanel>
           <TextBlock Text="Stream identification (optional, visible to listeners)" FontWeight="Bold" />
           <TextBox x:Name="StreamNameInput" Text="{Binding StreamName}" MaxLength="128"

@@ -9,10 +9,27 @@ public sealed record ConnectionProfile(
     Guid Id, string Name, string Host, int Port, string Mount,
     string Username = "source", bool UseTls = false, string ContentType = "audio/mpeg",
     int BitrateKbps = 128, int SampleRate = 44100, int Channels = 2,
-    string StreamName = "", string StreamDescription = "", string StreamGenre = "", string StreamUrl = "")
+    string StreamName = "", string StreamDescription = "", string StreamGenre = "", string StreamUrl = "",
+    bool PublishOpus = false, int OpusBitrateKbps = 64)
 {
     [JsonIgnore]
     public Uri Endpoint => new UriBuilder(UseTls ? "https" : "http", Host, Port, Mount).Uri;
+
+    /// <summary>Ogg Opus mount published next to an MP3 mount: <c>/x/live.mp3</c> becomes <c>/x/live.opus</c>.</summary>
+    [JsonIgnore]
+    public string OpusMount => Mount.EndsWith(".mp3", StringComparison.Ordinal) ? Mount[..^4] + ".opus" : "";
+
+    /// <summary>
+    /// One profile per published stream. The first is this profile; with <see cref="PublishOpus"/> an MP3
+    /// profile adds an Ogg Opus stream on <see cref="OpusMount"/>, encoded from the same capture.
+    /// </summary>
+    public IReadOnlyList<ConnectionProfile> Outputs() => PublishOpus && ContentType == "audio/mpeg"
+        ? [this, this with
+        {
+            Mount = OpusMount, ContentType = "audio/ogg", BitrateKbps = OpusBitrateKbps,
+            SampleRate = 48000, PublishOpus = false,
+        }]
+        : [this];
 }
 
 public static partial class ProfileValidator
@@ -62,9 +79,24 @@ public static partial class ProfileValidator
             errors.Add("Select audio/mpeg, audio/aac or audio/ogg.");
         }
 
-        if (profile.BitrateKbps is not (64 or 96 or 128 or 192 or 320))
+        if (profile.ContentType == "audio/ogg")
+        {
+            if (profile.BitrateKbps is not (48 or 64 or 96))
+            {
+                errors.Add("Select an Opus bitrate of 48, 64 or 96 kbps.");
+            }
+        }
+        else if (profile.BitrateKbps is not (64 or 96 or 128 or 192 or 320))
         {
             errors.Add("Select a bitrate of 64, 96, 128, 192 or 320 kbps.");
+        }
+        if (profile.PublishOpus && (profile.ContentType != "audio/mpeg" || profile.OpusMount.Length == 0))
+        {
+            errors.Add("Publishing Opus alongside MP3 needs an audio/mpeg profile whose mount ends in .mp3.");
+        }
+        if (profile.OpusBitrateKbps is not (48 or 64 or 96))
+        {
+            errors.Add("Select an Opus bitrate of 48, 64 or 96 kbps.");
         }
         if (profile.SampleRate is not (44100 or 48000))
         {

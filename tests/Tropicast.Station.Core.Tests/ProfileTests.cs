@@ -50,6 +50,49 @@ public sealed class ProfileTests
             BitrateKbps = bitrate, SampleRate = rate, Channels = channels,
         }));
 
+    [Fact]
+    public void Opus_alongside_MP3_adds_an_ogg_output_on_the_opus_mount()
+    {
+        var profile = TestProfiles.Valid() with
+        {
+            Mount = "/stations/42/live.mp3", PublishOpus = true, OpusBitrateKbps = 48, SampleRate = 44100, Channels = 1,
+        };
+        Assert.Empty(ProfileValidator.Validate(profile));
+        var outputs = profile.Outputs();
+        Assert.Equal(2, outputs.Count);
+        Assert.Same(profile, outputs[0]);
+        var opus = outputs[1];
+        Assert.Equal("/stations/42/live.opus", opus.Mount);
+        Assert.Equal("audio/ogg", opus.ContentType);
+        Assert.Equal(48, opus.BitrateKbps);
+        Assert.Equal(48000, opus.SampleRate);
+        Assert.Equal(1, opus.Channels);
+        Assert.False(opus.PublishOpus);
+        Assert.Empty(ProfileValidator.Validate(opus));
+        Assert.Single((profile with { PublishOpus = false }).Outputs());
+    }
+
+    [Theory]
+    [InlineData("audio/mpeg", "/live", 64, 128)]
+    [InlineData("audio/ogg", "/live.mp3", 64, 64)]
+    [InlineData("audio/mpeg", "/live.mp3", 128, 128)]
+    public void Invalid_opus_settings_are_rejected(string contentType, string mount, int opusBitrate, int bitrate)
+        => Assert.NotEmpty(ProfileValidator.Validate(TestProfiles.Valid() with
+        {
+            ContentType = contentType, Mount = mount, PublishOpus = true, OpusBitrateKbps = opusBitrate, BitrateKbps = bitrate,
+        }));
+
+    [Theory]
+    [InlineData(48, true)]
+    [InlineData(64, true)]
+    [InlineData(96, true)]
+    [InlineData(128, false)]
+    public void Opus_only_profiles_use_opus_bitrates(int bitrate, bool valid)
+        => Assert.Equal(valid, ProfileValidator.Validate(TestProfiles.Valid() with
+        {
+            ContentType = "audio/ogg", Mount = "/live.opus", BitrateKbps = bitrate,
+        }).Count == 0);
+
     [Theory]
     [InlineData("name\r\nIce-Public: 1")]
     [InlineData("line\nbreak")]

@@ -108,7 +108,8 @@ internal sealed class FfmpegSession : IEncoderSession
             }
             var snapshot = Snapshot;
             Volatile.Write(ref _snapshot, new(_stopping ? EncoderState.Stopping : EncoderState.Streaming,
-                _stopping ? "Finishing the MP3 stream." : "Publishing MP3 audio to Tropicast.", snapshot.EncodedBytes + count));
+                _stopping ? $"Finishing the {_options.CodecName} stream." : $"Publishing {_options.CodecName} audio to Tropicast.",
+                snapshot.EncodedBytes + count));
         }
     }
 
@@ -127,7 +128,9 @@ internal sealed class FfmpegSession : IEncoderSession
                 if (line.Contains("Unknown encoder", StringComparison.OrdinalIgnoreCase)
                     || line.Contains("Encoder not found", StringComparison.OrdinalIgnoreCase))
                 {
-                    throw new EncoderException("Bundled FFmpeg lacks libmp3lame. Rebuild the documented FFmpeg bundle.");
+                    throw new EncoderException(_options.Codec == EncoderCodec.Opus
+                        ? "Bundled FFmpeg lacks libopus. Rebuild the documented FFmpeg bundle."
+                        : "Bundled FFmpeg lacks libmp3lame. Rebuild the documented FFmpeg bundle.");
                 }
                 if (line.Contains("Error", StringComparison.OrdinalIgnoreCase)
                     || line.Contains("Invalid", StringComparison.OrdinalIgnoreCase))
@@ -258,7 +261,7 @@ internal sealed class FfmpegSession : IEncoderSession
                 _input.Writer.TryComplete();
                 if (!_disposed && _failure is null)
                 {
-                    Volatile.Write(ref _snapshot, Snapshot with { State = EncoderState.Stopping, Message = "Finishing the MP3 stream." });
+                    Volatile.Write(ref _snapshot, Snapshot with { State = EncoderState.Stopping, Message = $"Finishing the {_options.CodecName} stream." });
                 }
             }
         }
