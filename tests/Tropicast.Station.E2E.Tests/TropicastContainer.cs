@@ -116,7 +116,7 @@ internal sealed class TropicastContainer : IAsyncDisposable
     private async Task WaitReadyAsync(CancellationToken token)
     {
         using var http = new HttpClient { Timeout = TimeSpan.FromSeconds(1) };
-        // Generous: the self-hosted CI runner may be building another job on the same host.
+        // Generous: a busy CI host can delay the container's start.
         var deadline = Stopwatch.StartNew();
         while (deadline.Elapsed < ReadyTimeout)
         {
