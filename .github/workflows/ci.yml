@@ -150,6 +150,8 @@ jobs:
 
       - name: Upload test results
         if: always()
+        # Artifacts are a convenience: a full storage quota must not fail the build.
+        continue-on-error: true
         uses: actions/upload-artifact@v7
         with:
           name: test-results-${{ matrix.os }}
@@ -238,6 +240,8 @@ jobs:
           pkill -f 'usr/bin/Tropicast.Station$'
 
       - name: Upload packages
+        # Artifacts are a convenience: a full storage quota must not fail the build.
+        continue-on-error: true
         uses: actions/upload-artifact@v7
         with:
           name: packages-${{ matrix.os }}
@@ -297,6 +301,8 @@ jobs:
 
       - name: Upload test results
         if: always()
+        # Artifacts are a convenience: a full storage quota must not fail the build.
+        continue-on-error: true
         uses: actions/upload-artifact@v7
         with:
           name: test-results-e2e
