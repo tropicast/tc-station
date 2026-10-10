@@ -2,7 +2,7 @@
 
 Cross-platform desktop broadcaster for Tropicast radio stations, built with [Avalonia](https://avaloniaui.net/) on .NET 10. Captures station audio (mic, mixer or app output), encodes, streams live to Icecast mount.
 
-> Status: desktop scaffold, manual connection profiles, shared audio capture/device-picker pipeline, Windows WASAPI, Linux PulseAudio/PipeWire, macOS Core Audio/ScreenCaptureKit adapters, supervised FFmpeg/Icecast publishing backend, Go Live workflow, audio meters, auto reconnect, per-profile stream quality/metadata, safe diagnostics (issues #2–#13). Remaining features tracked in MVP epic, #1.
+> Status: desktop scaffold, Tropicast account sign-in and stations (#41), manual connection profiles, shared audio capture/device-picker pipeline, Windows WASAPI, Linux PulseAudio/PipeWire, macOS Core Audio/ScreenCaptureKit adapters, supervised FFmpeg/Icecast publishing backend, Go Live workflow, audio meters, auto reconnect, per-profile stream quality/metadata, safe diagnostics (issues #2–#13). Remaining features tracked in MVP epic, #1.
 
 ## Prerequisites
 
@@ -177,9 +177,29 @@ Broadcast tab keeps per-channel **peak** (amber) + **RMS** (green) meters beside
 
 Optional **in-app notification** off by default, fires once per silence episode, not every meter tick. Warnings work in preview + live, never stop stream. Session-only meter prefs reset on app restart; independent of saved profile encoder settings.
 
+## Tropicast account
+
+The default way to broadcast: **Sign in with Tropicast**, pick a station, Go Live. No host, mount or password is typed. Contract: [tc-dashboard docs/desktop-api.md](https://github.com/tropicast/tc-dashboard/blob/main/docs/desktop-api.md) (v1).
+
+- **Sign-in** uses the device authorization flow. The app shows a code such as `BCDF-GHJK` and opens the browser. The user approves the code on the web while signed in there, and the app polls until approved, refused or expired (10 minutes). The app never sees the account password. The device is named after the computer (`Environment.MachineName`).
+- **Stations**: every station of every tenant of the account. **Refresh stations** reloads them. The choice is remembered.
+- **Broadcast target**: on the first Go Live for a station, the app asks the API for the ingest URLs, username, formats and plan bitrate, and a password for this device. MP3 is published at up to 128 kbps, plus Ogg Opus at up to 64 kbps from the same capture when the plan includes it. Both are capped by the plan's maximum. If Icecast refuses the stored password (revoked on the web, or replaced by another install), the app gets a new one once, then shows the error.
+- **Storage**: the refresh token and station passwords live only in the OS credential store. The access token (15 minutes) lives only in memory and is refreshed before it expires. Stations and targets without passwords are in `account.json` next to `profiles.json`.
+- **Sign out** revokes the device on the server and removes its tokens and station passwords. Signing the device out on the web (Devices), or a password change, ends it too: the next API call signs the app out.
+- **API address**: `https://app.tropicastradio.com`. For a local tc-dashboard (`compose.yaml`), set `Tropicast__ApiBaseUrl=http://localhost:8080`. Plain HTTP is accepted for this computer only.
+
+**Manual connection profiles** (below) remain as an advanced option for your own Icecast server.
+
+Opt-in contract test against a running tc-dashboard (`compose.yaml`, plus HTTPS on the API for the browser cookies):
+
+```sh
+TC_DASHBOARD_URL=http://localhost:8080 TC_DASHBOARD_WEB_URL=https://localhost:8443 TC_DASHBOARD_MAIL_URL=http://localhost:8025 \
+  dotnet test tests/Tropicast.Station.Infrastructure.Tests --filter FullyQualifiedName~Contract
+```
+
 ## Go Live / Stop
 
-First **Broadcast** tab = three-step workflow: pick **saved connection profile**, pick **one input or system-output source**, press **Go Live**. Create/save credentials in Connection profiles tab first. Current encoder needs **audio/mpeg** profile + bundled FFmpeg above. Starting broadcast replaces any active local preview with capture in selected encoder format.
+First **Broadcast** tab = three-step workflow: pick **a station of the Tropicast account** (or, under *manual connection profile*, a saved profile), pick **one input or system-output source**, press **Go Live**. Manual profiles need credentials saved in the Connection profiles tab first. Current encoder needs **audio/mpeg** profile + bundled FFmpeg above. Starting broadcast replaces any active local preview with capture in selected encoder format.
 Broadcast tab shows selected saved profile's bitrate, rate, channels, stream name. Unsaved editor changes and source picker's **preview** rate/channels don't override saved broadcast settings.
 
 Status badge/text expose **Idle → Connecting → Live → Stopping → Idle**, plus **Error** on capture/connection/encoder failure. **Live** begins when encoder sends MP3 bytes, not just on auth success. Elapsed counter accumulates actual Live time (excl. reconnect downtime), retains last session duration after stop.

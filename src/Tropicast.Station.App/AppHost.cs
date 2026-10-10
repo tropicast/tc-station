@@ -40,9 +40,11 @@ internal static class AppHost
             .AddStationCore()
             .AddStationAudio(demoAudio)
             .AddStationEncoding()
-            .AddStationInfrastructure();
+            .AddStationInfrastructure(ApiBaseUrl(builder.Configuration["Tropicast:ApiBaseUrl"]));
 
         builder.Services.AddSingleton<MainViewModel>();
+        builder.Services.AddSingleton<AccountViewModel>();
+        builder.Services.AddSingleton<IExternalBrowser, ExternalBrowser>();
         builder.Services.AddSingleton<ProfileEditorViewModel>();
         builder.Services.AddSingleton<AudioDevicesViewModel>();
         builder.Services.AddSingleton<AudioLevelsViewModel>();
@@ -67,4 +69,13 @@ internal static class AppHost
 
         return builder.Build();
     }
+
+    /// <summary>
+    /// The Tropicast API address: production unless the <c>Tropicast:ApiBaseUrl</c> setting (e.g. the environment
+    /// variable <c>Tropicast__ApiBaseUrl=http://localhost:8080</c>) names another one.
+    /// </summary>
+    private static Uri? ApiBaseUrl(string? setting)
+        => string.IsNullOrWhiteSpace(setting) ? null
+            : Uri.TryCreate(setting, UriKind.Absolute, out var url) && Infrastructure.HttpDesktopApi.IsAllowed(url) ? url
+            : throw new InvalidOperationException("Tropicast:ApiBaseUrl must be an HTTPS address (or HTTP on this computer).");
 }

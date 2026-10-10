@@ -12,19 +12,30 @@ public sealed partial class BroadcastViewModel : ViewModelBase, IDisposable
     private readonly IBroadcastConfirmation _confirmation;
     private readonly ProfileEditorViewModel _profiles;
     private readonly AudioDevicesViewModel _audio;
+    private readonly AccountViewModel _account;
     private bool _disposed;
     private bool _confirming;
 
     public BroadcastViewModel(BroadcastController controller, IBroadcastConfirmation confirmation,
-        ProfileEditorViewModel profiles, AudioDevicesViewModel audio)
+        ProfileEditorViewModel profiles, AudioDevicesViewModel audio, AccountViewModel account)
     {
         _controller = controller;
         _confirmation = confirmation;
         _profiles = profiles;
         _audio = audio;
+        _account = account;
         controller.Changed += OnChanged;
         profiles.PropertyChanged += OnSelectionChanged;
         audio.PropertyChanged += OnSelectionChanged;
+        account.PropertyChanged += OnSelectionChanged;
+    }
+
+    /// <summary>Broadcast to a station of the Tropicast account (default once signed in), or to a manual profile.</summary>
+    [ObservableProperty] public partial bool UseStation { get; set; }
+    public bool UseProfile
+    {
+        get => !UseStation;
+        set => UseStation = !value;
     }
 
     [ObservableProperty] public partial BroadcastState State { get; set; } = BroadcastState.Idle;
@@ -41,13 +52,19 @@ public sealed partial class BroadcastViewModel : ViewModelBase, IDisposable
     public string ActionLabel => IsActive ? "Stop broadcast" : "Go Live";
     public string TrayLabel => $"Tropicast Station — {StateLabel} ({Elapsed}){(IsReconnecting ? $" — {ReconnectStatus}" : "")}";
     public bool HasActiveBroadcast => _controller.Snapshot.IsActive;
-    public string StreamSettings => _profiles.SelectedProfile is { } profile
+    public string StreamSettings => UseStation
+        ? _account.SelectedStation is { } station
+            ? $"Station {station.Name}: MP3, plus Opus when the plan includes it, at bitrates within the plan. Tropicast provides the address and password."
+            : "Sign in and select a station to see its stream settings."
+        : _profiles.SelectedProfile is { } profile
         ? $"{profile.BitrateKbps} kbps {(profile.ContentType == "audio/ogg" ? "Opus" : "MP3")}, {profile.SampleRate} Hz, {(profile.Channels == 1 ? "mono" : "stereo")}"
             + (profile.PublishOpus ? $", plus {profile.OpusBitrateKbps} kbps Opus on {profile.OpusMount}" : "")
             + $". Stream name: {(profile.StreamName.Length == 0 ? "(not set)" : profile.StreamName)}"
         : "Select a saved profile to see its stream settings.";
-    private bool CanGoLive => !IsActive && !_disposed && !_confirming && !_profiles.IsBusy && !_audio.IsBusy
-        && _profiles.SelectedProfile is not null && (_audio.SelectedInput ?? _audio.SelectedOutput) is not null;
+    /// <summary>The station or profile Go Live publishes to.</summary>
+    private Guid? TargetId => UseStation ? _account.SelectedStation?.StationId : _profiles.SelectedProfile?.Id;
+    private bool CanGoLive => !IsActive && !_disposed && !_confirming && !_profiles.IsBusy && !_audio.IsBusy && !_account.IsBusy
+        && !_account.IsSigningIn && TargetId is not null && (_audio.SelectedInput ?? _audio.SelectedOutput) is not null;
     private bool CanStop => IsActive && State != BroadcastState.Stopping && !_confirming && !_disposed;
     private bool CanRetryNow => !_disposed && !_confirming && _controller.Snapshot.State == BroadcastState.Reconnecting
         && !_controller.Snapshot.IsRetryConnecting;
@@ -62,10 +79,10 @@ public sealed partial class BroadcastViewModel : ViewModelBase, IDisposable
     [RelayCommand(CanExecute = nameof(CanGoLive))]
     private async Task GoLiveAsync()
     {
-        var profile = _profiles.SelectedProfile!;
+        var target = TargetId!.Value;
         var device = (_audio.SelectedInput ?? _audio.SelectedOutput)!;
         SetLocked(true);
-        await _controller.StartAsync(profile.Id, device.Id);
+        await _controller.StartAsync(target, device.Id);
         ApplySnapshot();
     }
 
@@ -122,6 +139,7 @@ public sealed partial class BroadcastViewModel : ViewModelBase, IDisposable
     {
         _profiles.IsBroadcastLocked = locked;
         _audio.IsBroadcastLocked = locked;
+        _account.IsBroadcastLocked = locked;
     }
 
     private void OnChanged(object? sender, BroadcastChangedEventArgs e)
@@ -165,10 +183,21 @@ public sealed partial class BroadcastViewModel : ViewModelBase, IDisposable
     private void OnSelectionChanged(object? sender, PropertyChangedEventArgs e)
     {
         NotifyCommands();
-        if (e.PropertyName == nameof(ProfileEditorViewModel.SelectedProfile))
+        if (sender == _account && e.PropertyName == nameof(AccountViewModel.IsSignedIn) && !IsActive)
+        {
+            UseStation = _account.IsSignedIn;
+        }
+        if (e.PropertyName is nameof(ProfileEditorViewModel.SelectedProfile) or nameof(AccountViewModel.SelectedStation))
         {
             OnPropertyChanged(nameof(StreamSettings));
         }
+    }
+
+    partial void OnUseStationChanged(bool value)
+    {
+        OnPropertyChanged(nameof(UseProfile));
+        OnPropertyChanged(nameof(StreamSettings));
+        NotifyCommands();
     }
     private void NotifyCommands()
     {
@@ -183,6 +212,7 @@ public sealed partial class BroadcastViewModel : ViewModelBase, IDisposable
         _controller.Changed -= OnChanged;
         _profiles.PropertyChanged -= OnSelectionChanged;
         _audio.PropertyChanged -= OnSelectionChanged;
+        _account.PropertyChanged -= OnSelectionChanged;
         GC.SuppressFinalize(this);
     }
 }

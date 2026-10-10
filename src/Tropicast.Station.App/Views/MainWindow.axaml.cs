@@ -21,6 +21,7 @@ public partial class MainWindow : Window
         {
             _notifications = new(this) { Position = NotificationPosition.TopRight, MaxItems = 1 };
             model.Audio.Levels.SilenceStarted += OnSilenceStarted;
+            model.Account.LoadCommand.Execute(null);
             model.Profiles.LoadCommand.Execute(null);
             model.Audio.RefreshCommand.Execute(null);
         }
@@ -31,6 +32,7 @@ public partial class MainWindow : Window
         if (DataContext is MainViewModel model)
         {
             model.Audio.Levels.SilenceStarted -= OnSilenceStarted;
+            model.Account.SignInCommand.Cancel();
             model.Profiles.TestCommand.Cancel();
             model.Profiles.Password = "";
             if (model.Audio.StopCommand.CanExecute(null))
