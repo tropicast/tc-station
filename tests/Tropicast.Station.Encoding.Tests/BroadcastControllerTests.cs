@@ -175,6 +175,42 @@ public sealed class BroadcastControllerTests
     }
 
     [Fact]
+    public async Task A_refused_station_password_is_renewed_once_and_the_broadcast_goes_live()
+    {
+        await using var capture = new AudioCaptureService(new ToneAudioCaptureProvider(), NullLogger<AudioCaptureService>.Instance);
+        var encoder = new RetryingEncoder
+        {
+            StartError = attempt => attempt == 1
+                ? new TropicastSourceException(ConnectionTestStatus.AuthenticationFailed, "Authentication failed.") : null,
+        };
+        var targets = new RenewingTargets();
+        using var controller = new BroadcastController(capture, targets, encoder, NullLogger<BroadcastController>.Instance);
+        await controller.StartAsync(Guid.NewGuid(), "demo-input", cancellationToken: TestContext.Current.CancellationToken);
+        await UntilAsync(() => controller.Snapshot.State == BroadcastState.Live);
+        Assert.Equal(1, targets.Renewals);
+        Assert.Equal(["stored", "renewed-1"], encoder.Requests.Select(r => r.Target.Password));
+        await controller.StopAsync(TestContext.Current.CancellationToken);
+    }
+
+    [Fact]
+    public async Task A_renewed_password_that_is_refused_again_ends_with_the_error()
+    {
+        await using var capture = new AudioCaptureService(new ToneAudioCaptureProvider(), NullLogger<AudioCaptureService>.Instance);
+        var encoder = new RetryingEncoder
+        {
+            StartError = _ => new TropicastSourceException(ConnectionTestStatus.AuthenticationFailed, "Authentication failed."),
+        };
+        var targets = new RenewingTargets();
+        using var controller = new BroadcastController(capture, targets, encoder, NullLogger<BroadcastController>.Instance);
+        await controller.StartAsync(Guid.NewGuid(), "demo-input", cancellationToken: TestContext.Current.CancellationToken);
+        Assert.Equal(BroadcastState.Error, controller.Snapshot.State);
+        Assert.Contains("Authentication", controller.Snapshot.Message, StringComparison.Ordinal);
+        Assert.Equal(1, targets.Renewals);
+        Assert.Equal(2, encoder.Starts);
+        Assert.False(capture.Snapshot.IsCapturing);
+    }
+
+    [Fact]
     public async Task Initial_unreachable_server_retries_with_capture_but_auth_on_retry_is_terminal()
     {
         await using var capture = new AudioCaptureService(new ToneAudioCaptureProvider(), NullLogger<AudioCaptureService>.Instance);
@@ -441,6 +477,22 @@ public sealed class BroadcastControllerTests
             await Task.Delay(Timeout.Infinite, cancellationToken);
             throw new InvalidOperationException();
         }
+    }
+}
+
+/// <summary>A station target whose password can be renewed, like the account's stations.</summary>
+internal sealed class RenewingTargets : IBroadcastTargetProvider
+{
+    internal int Renewals { get; private set; }
+
+    public Task<BroadcastTarget> GetAsync(Guid profileId, CancellationToken cancellationToken = default)
+        => Task.FromResult(new BroadcastTarget(new(profileId, "Station", "127.0.0.1", 8000, "/test.mp3"), "stored"));
+
+    public Task<BroadcastTarget?> RenewAsync(Guid profileId, CancellationToken cancellationToken = default)
+    {
+        Renewals++;
+        return Task.FromResult<BroadcastTarget?>(new BroadcastTarget(new(profileId, "Station", "127.0.0.1", 8000, "/test.mp3"),
+            $"renewed-{Renewals}"));
     }
 }
 

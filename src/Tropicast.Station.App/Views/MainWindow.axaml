@@ -2,6 +2,7 @@
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         xmlns:vm="using:Tropicast.Station.App.ViewModels"
         xmlns:profiles="using:Tropicast.Station.Core.Profiles"
+        xmlns:account="using:Tropicast.Station.Core.Account"
         xmlns:views="using:Tropicast.Station.App.Views"
         x:Class="Tropicast.Station.App.Views.MainWindow"
         x:DataType="vm:MainViewModel"
@@ -33,7 +34,7 @@
               <Button x:Name="GoLiveButton" Content="Go Live" Command="{Binding GoLiveCommand}"
                       IsVisible="{Binding !IsActive}" FontSize="24" Padding="32,14"
                       HorizontalAlignment="Stretch" AutomationProperties.Name="Go Live"
-                      AutomationProperties.HelpText="Start broadcasting the selected source to the saved profile." />
+                      AutomationProperties.HelpText="Start broadcasting the selected source to the selected station or profile." />
               <Button x:Name="StopBroadcastButton" Content="Stop broadcast" Command="{Binding StopCommand}"
                       IsVisible="{Binding IsActive}" FontSize="24" Padding="32,14"
                       HorizontalAlignment="Stretch" AutomationProperties.Name="Stop broadcast"
@@ -53,15 +54,51 @@
           <Grid ColumnDefinitions="*,280">
             <ScrollViewer>
               <StackPanel Spacing="16" Margin="0,0,16,0">
-                <TextBlock Text="1. Select a saved connection profile" FontSize="18" />
-                <ComboBox x:Name="BroadcastProfilePicker" ItemsSource="{Binding Profiles.Profiles}"
-                          SelectedItem="{Binding Profiles.SelectedProfile}" IsEnabled="{Binding Profiles.CanManage}"
-                          HorizontalAlignment="Stretch" AutomationProperties.Name="Broadcast connection profile">
-                  <ComboBox.ItemTemplate>
-                    <DataTemplate x:DataType="profiles:ConnectionProfile"><TextBlock Text="{Binding Name}" /></DataTemplate>
-                  </ComboBox.ItemTemplate>
-                </ComboBox>
-                <TextBlock Text="Create or edit profiles in the Connection profiles tab." TextWrapping="Wrap" />
+                <TextBlock Text="1. Choose where to broadcast" FontSize="18" />
+                <RadioButton x:Name="UseStationOption" GroupName="BroadcastTarget" Content="A station of my Tropicast account"
+                             IsChecked="{Binding Broadcast.UseStation}" IsEnabled="{Binding !Broadcast.IsActive}" />
+                <StackPanel x:Name="AccountPanel" DataContext="{Binding Account}" x:DataType="vm:AccountViewModel"
+                            Spacing="8" Margin="24,0,0,0">
+                  <Button x:Name="SignInButton" Content="Sign in with Tropicast" Command="{Binding SignInCommand}"
+                          IsVisible="{Binding IsSignedOut}" AutomationProperties.Name="Sign in with Tropicast"
+                          AutomationProperties.HelpText="Opens the browser to approve this computer. No password is typed here." />
+                  <StackPanel IsVisible="{Binding IsSigningIn}" Spacing="8">
+                    <TextBlock Text="Approve this code in your browser:" />
+                    <TextBlock x:Name="UserCode" Text="{Binding UserCode}" FontSize="28" FontWeight="Bold" FontFamily="monospace"
+                               AutomationProperties.Name="{Binding UserCode}" />
+                    <StackPanel Orientation="Horizontal" Spacing="8">
+                      <Button Content="Open the page again" Command="{Binding OpenSignInPageCommand}" />
+                      <Button x:Name="CancelSignInButton" Content="Cancel" Command="{Binding SignInCancelCommand}" />
+                    </StackPanel>
+                  </StackPanel>
+                  <StackPanel IsVisible="{Binding IsSignedIn}" Spacing="8">
+                    <ComboBox x:Name="StationPicker" ItemsSource="{Binding Stations}" SelectedItem="{Binding SelectedStation}"
+                              IsEnabled="{Binding CanChooseStation}" HorizontalAlignment="Stretch"
+                              AutomationProperties.Name="Station to broadcast to">
+                      <ComboBox.ItemTemplate>
+                        <DataTemplate x:DataType="account:AccountStation"><TextBlock Text="{Binding DisplayName}" /></DataTemplate>
+                      </ComboBox.ItemTemplate>
+                    </ComboBox>
+                    <StackPanel Orientation="Horizontal" Spacing="8">
+                      <Button Content="Refresh stations" Command="{Binding RefreshStationsCommand}" />
+                      <Button x:Name="SignOutButton" Content="Sign out" Command="{Binding SignOutCommand}" />
+                    </StackPanel>
+                  </StackPanel>
+                  <TextBlock x:Name="AccountStatus" Text="{Binding Status}" TextWrapping="Wrap"
+                             AutomationProperties.Name="{Binding Status}" />
+                </StackPanel>
+                <RadioButton x:Name="UseProfileOption" GroupName="BroadcastTarget" Content="A manual connection profile (advanced)"
+                             IsChecked="{Binding Broadcast.UseProfile}" IsEnabled="{Binding !Broadcast.IsActive}" />
+                <StackPanel Spacing="8" Margin="24,0,0,0" IsVisible="{Binding Broadcast.UseProfile}">
+                  <ComboBox x:Name="BroadcastProfilePicker" ItemsSource="{Binding Profiles.Profiles}"
+                            SelectedItem="{Binding Profiles.SelectedProfile}" IsEnabled="{Binding Profiles.CanManage}"
+                            HorizontalAlignment="Stretch" AutomationProperties.Name="Broadcast connection profile">
+                    <ComboBox.ItemTemplate>
+                      <DataTemplate x:DataType="profiles:ConnectionProfile"><TextBlock Text="{Binding Name}" /></DataTemplate>
+                    </ComboBox.ItemTemplate>
+                  </ComboBox>
+                  <TextBlock Text="For your own Icecast server. Create or edit profiles in the Connection profiles tab." TextWrapping="Wrap" />
+                </StackPanel>
                 <TextBlock x:Name="SavedStreamSettings" Text="{Binding Broadcast.StreamSettings}" TextWrapping="Wrap"
                            AutomationProperties.Name="{Binding Broadcast.StreamSettings}" />
                 <TextBlock Text="2. Select an audio source" FontSize="18" />

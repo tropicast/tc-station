@@ -2,6 +2,7 @@ using System.Diagnostics;
 using System.Runtime.ExceptionServices;
 using Microsoft.Extensions.Logging;
 using Tropicast.Station.Audio;
+using Tropicast.Station.Core.Account;
 using Tropicast.Station.Core.Broadcasting;
 using Tropicast.Station.Core.Profiles;
 using Tropicast.Station.Infrastructure;
@@ -84,16 +85,13 @@ public sealed partial class BroadcastController(
             {
                 _startCancellation = starting;
             }
-            Publish(BroadcastState.Connecting, "Connecting to the saved profile…");
+            Publish(BroadcastState.Connecting, "Connecting…");
             try
             {
                 await capture.StopAsync(starting.Token).ConfigureAwait(false);
                 var target = await targets.GetAsync(profileId, starting.Token).ConfigureAwait(false);
                 var primary = options ?? EncoderOptions.FromProfile(target.Profile);
-                var outputs = target.Profile.Outputs()
-                    .Select((profile, index) => index == 0 ? new Output(target, primary)
-                        : new Output(new BroadcastTarget(profile, target.Password), primary.ForOutput(profile)))
-                    .ToArray();
+                var outputs = OutputsOf(target, primary);
                 await capture.StartAsync(deviceId, primary.Format, starting.Token).ConfigureAwait(false);
                 if (!capture.Snapshot.IsCapturing)
                 {
@@ -101,11 +99,28 @@ public sealed partial class BroadcastController(
                 }
                 Volatile.Write(ref _outputs, outputs);
                 capture.FrameAvailable += OnFrame;
-                foreach (var output in outputs)
+                var renewed = false;
+                for (var index = 0; index < outputs.Length; index++)
                 {
+                    var output = outputs[index];
                     try
                     {
                         Volatile.Write(ref output.Session, await encoder.StartAsync(output.Target, output.Options, starting.Token).ConfigureAwait(false));
+                    }
+                    catch (TropicastSourceException ex) when (ex.Status == ConnectionTestStatus.AuthenticationFailed && index == 0 && !renewed)
+                    {
+                        // The stored password was refused (e.g. replaced from another install): get a new one once.
+                        renewed = true;
+                        if (await targets.RenewAsync(profileId, starting.Token).ConfigureAwait(false) is { } fresh)
+                        {
+                            outputs = OutputsOf(fresh, options ?? EncoderOptions.FromProfile(fresh.Profile));
+                            Volatile.Write(ref _outputs, outputs);
+                            index--;
+                        }
+                        else
+                        {
+                            FailOutput(output, ex);
+                        }
                     }
                     catch (IOException ex) when (CanRetry(ex))
                     {
@@ -134,7 +149,8 @@ public sealed partial class BroadcastController(
                 var error = await CleanupAsync().ConfigureAwait(false);
                 Publish(error is null ? BroadcastState.Idle : BroadcastState.Error, error ?? "Connection cancelled.");
             }
-            catch (Exception ex) when (ex is IOException or InvalidOperationException or ArgumentException or SecretStoreException)
+            catch (Exception ex) when (ex is IOException or InvalidOperationException or ArgumentException or SecretStoreException
+                or DesktopApiException)
             {
                 var cleanup = await CleanupAsync().ConfigureAwait(false);
                 LogFailure(logger, ex.GetType().Name);
@@ -277,6 +293,12 @@ public sealed partial class BroadcastController(
 
     internal static TimeSpan Backoff(int attempt, double jitter)
         => TimeSpan.FromSeconds(Math.Min(30, Math.Min(30, Math.Pow(2, Math.Min(Math.Max(attempt - 1, 0), 5))) * (0.8 + 0.4 * jitter)));
+
+    /// <summary>The target's streams: the profile's own, plus Opus from the same capture when enabled.</summary>
+    private static Output[] OutputsOf(BroadcastTarget target, EncoderOptions primary) => target.Profile.Outputs()
+        .Select((profile, index) => index == 0 ? new Output(target, primary)
+            : new Output(new BroadcastTarget(profile, target.Password), primary.ForOutput(profile)))
+        .ToArray();
 
     internal static bool CanRetry(IOException error) => error switch
     {
@@ -441,7 +463,7 @@ public sealed partial class BroadcastController(
 
     private static string SafeMessage(Exception ex) => ex switch
     {
-        IOException or SecretStoreException => ex.Message,
+        IOException or SecretStoreException or DesktopApiException => ex.Message,
         InvalidOperationException => "The selected profile has no valid credentials or broadcasting is already active. Check the saved profile.",
         _ => "The broadcast settings are invalid. Select an MP3 or Opus profile and supported audio format.",
     };
@@ -467,7 +489,7 @@ public sealed partial class BroadcastController(
         }
         else if (Snapshot.State != BroadcastState.Connecting)
         {
-            Publish(BroadcastState.Connecting, "Connecting to the saved profile…");
+            Publish(BroadcastState.Connecting, "Connecting…");
         }
     }
 

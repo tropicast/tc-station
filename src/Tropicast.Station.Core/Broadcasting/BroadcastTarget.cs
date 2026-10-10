@@ -17,6 +17,13 @@ public sealed class BroadcastTarget(ConnectionProfile profile, string password)
 public interface IBroadcastTargetProvider
 {
     Task<BroadcastTarget> GetAsync(Guid profileId, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// A new target after the server refused the password, or null when the password cannot be renewed (a manual
+    /// profile: the user edits it).
+    /// </summary>
+    Task<BroadcastTarget?> RenewAsync(Guid profileId, CancellationToken cancellationToken = default)
+        => Task.FromResult<BroadcastTarget?>(null);
 }
 
 public sealed class ManualBroadcastTargetProvider(IProfileStore profiles, ISecretStore secrets) : IBroadcastTargetProvider
