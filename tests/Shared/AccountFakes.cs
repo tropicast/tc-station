@@ -31,6 +31,8 @@ internal sealed class FakeDesktopApi : IDesktopApi
     /// <summary>The device was signed out on the web: refreshes and targets are refused.</summary>
     public bool SignedOutOnWeb { get; set; }
     public bool Offline { get; set; }
+    /// <summary>Access tokens issued so far are refused with 401 (e.g. after a password change on the web).</summary>
+    public bool RejectAccessTokens { get; set; }
     public List<string> Revoked { get; } = [];
     public List<string> AccessTokensSeen { get; } = [];
     public string CurrentRefreshToken { get; private set; } = "";
@@ -74,6 +76,10 @@ internal sealed class FakeDesktopApi : IDesktopApi
     {
         ThrowIfOffline();
         AccessTokensSeen.Add(accessToken);
+        if (RejectAccessTokens)
+        {
+            throw new DesktopApiException(DesktopApiError.Unauthorized, "Sign in again on this device.");
+        }
         return Task.FromResult<IReadOnlyList<AccountStation>>([.. Stations]);
     }
 

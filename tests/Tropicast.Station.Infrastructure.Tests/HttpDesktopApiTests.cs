@@ -70,6 +70,19 @@ public sealed class HttpDesktopApiTests
         Assert.All(handler.Requests, r => Assert.Null(r.Request.Headers.Authorization));
     }
 
+    [Theory]
+    [InlineData("http://app.test/device", "https://app.test/device?code=BCDF-GHJK")]
+    [InlineData("https://app.test/device", "http://app.test/device?code=BCDF-GHJK")]
+    [InlineData("https://app.test/device", "javascript:alert(1)")]
+    public async Task A_sign_in_page_that_is_not_https_is_refused(string page, string complete)
+    {
+        var (api, _) = Create(_ => Json(HttpStatusCode.OK,
+            $$"""{"deviceCode":"0192.secret","userCode":"BCDF-GHJK","verificationUri":"{{page}}","verificationUriComplete":"{{complete}}","expiresIn":600,"interval":5}"""));
+        using var _ = api;
+
+        Assert.Equal(DesktopApiError.Invalid, (await Assert.ThrowsAsync<DesktopApiException>(() => api.StartSignInAsync("Studio PC", Token))).Error);
+    }
+
     [Fact]
     public async Task Stations_and_the_broadcast_target_use_the_bearer_token_and_tenant()
     {
@@ -108,13 +121,15 @@ public sealed class HttpDesktopApiTests
     [InlineData(HttpStatusCode.Found, DesktopApiError.Invalid)]
     public async Task Failures_map_to_safe_errors(HttpStatusCode status, DesktopApiError expected)
     {
-        var (api, _) = Create(_ => Json(status, """{"title":"Only a signed-in desktop device gets a broadcast target.","status":403}"""));
+        // A server or proxy that echoes the request (and its token) into the problem title must not reach the message.
+        var (api, _) = Create(_ => Json(status, """{"title":"refresh token rt-secret was refused","status":403}"""));
         using var __ = api;
 
         var error = await Assert.ThrowsAsync<DesktopApiException>(() => api.RefreshAsync("rt-secret", Token));
 
         Assert.Equal(expected, error.Error);
         Assert.DoesNotContain("rt-secret", error.Message, StringComparison.Ordinal);
+        Assert.DoesNotContain("was refused", error.Message, StringComparison.Ordinal);
     }
 
     [Fact]

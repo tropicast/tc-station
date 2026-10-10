@@ -35,7 +35,7 @@ public sealed partial class AccountViewModel : ViewModelBase, IDisposable
     public bool IsSignedOut => !IsSignedIn && !IsSigningIn;
     public bool HasNoStations => IsSignedIn && Stations.Count == 0;
     public bool CanChooseStation => IsSignedIn && !IsBusy && !IsBroadcastLocked;
-    private bool CanSignIn => !IsSignedIn && !IsSigningIn && !IsBusy;
+    private bool CanSignIn => !IsSignedIn && !IsSigningIn && !IsBusy && !IsBroadcastLocked;
     private bool CanUseAccount => IsSignedIn && !IsBusy && !IsBroadcastLocked;
 
     [RelayCommand]

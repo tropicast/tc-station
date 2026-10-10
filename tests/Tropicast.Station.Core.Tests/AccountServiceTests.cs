@@ -113,6 +113,27 @@ public sealed class AccountServiceTests
     }
 
     [Fact]
+    public async Task A_refused_access_token_is_refreshed_and_a_signed_out_device_is_forgotten()
+    {
+        using var account = await SignedInAsync();
+        await account.GetTargetAsync(FakeDesktopApi.Radio.StationId, renew: false, Token);
+
+        // Refused, but the refresh still works: one retry with the new token.
+        _api.RejectAccessTokens = true;
+        var before = _api.Refreshes;
+        await Assert.ThrowsAsync<DesktopApiException>(() => account.RefreshStationsAsync(Token));
+        Assert.Equal(before + 1, _api.Refreshes);
+        Assert.True(account.IsSignedIn);
+
+        // Signed out on the web while the cached access token is still unexpired: the refresh fails, the account is forgotten.
+        _api.SignedOutOnWeb = true;
+        var error = await Assert.ThrowsAsync<DesktopApiException>(() => account.RefreshStationsAsync(Token));
+        Assert.Equal(DesktopApiError.Unauthorized, error.Error);
+        Assert.False(account.IsSignedIn);
+        Assert.Empty(_secrets.Items);
+    }
+
+    [Fact]
     public async Task Sign_out_revokes_the_device_and_removes_every_secret()
     {
         using var account = await SignedInAsync();

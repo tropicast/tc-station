@@ -89,8 +89,8 @@ public sealed class AccountService(IDesktopApi api, IAccountStore store, ISecret
     /// <summary>Reloads the stations from the API, keeping the selection when the station is still there.</summary>
     public async Task RefreshStationsAsync(CancellationToken cancellationToken = default)
     {
-        var token = await GetAccessTokenAsync(cancellationToken).ConfigureAwait(false);
-        var stations = await api.GetStationsAsync(token, cancellationToken).ConfigureAwait(false);
+        var stations = await WithAccessTokenAsync(token => api.GetStationsAsync(token, cancellationToken), cancellationToken)
+            .ConfigureAwait(false);
         var ids = stations.Select(s => s.StationId).ToHashSet();
         foreach (var gone in _data.Targets.Where(t => !ids.Contains(t.StationId)))
         {
@@ -127,18 +127,16 @@ public sealed class AccountService(IDesktopApi api, IAccountStore store, ISecret
         IssuedStationTarget issued;
         try
         {
-            issued = await RequestTargetAsync(station, cancellationToken).ConfigureAwait(false);
+            issued = await WithAccessTokenAsync(
+                token => api.GetBroadcastTargetAsync(token, station.TenantId, station.StationId, cancellationToken), cancellationToken)
+                .ConfigureAwait(false);
         }
-        catch (DesktopApiException ex) when (ex.Error is DesktopApiError.Unauthorized or DesktopApiError.Forbidden)
+        catch (DesktopApiException ex) when (ex.Error == DesktopApiError.Forbidden)
         {
-            // The access token may predate a sign-out on the web: a refresh tells (and signs this device out if so).
+            // Forbidden may mean this device was signed out on the web: a refresh tells (and forgets the account if so).
             _accessToken = null;
             await GetAccessTokenAsync(cancellationToken).ConfigureAwait(false);
-            if (ex.Error == DesktopApiError.Forbidden)
-            {
-                throw;
-            }
-            issued = await RequestTargetAsync(station, cancellationToken).ConfigureAwait(false);
+            throw;
         }
         await secrets.SetAsync(stationId, issued.Password, cancellationToken).ConfigureAwait(false);
         await SaveAsync(_data with { Targets = [.. _data.Targets.Where(t => t.StationId != stationId), issued.Target] }, cancellationToken)
@@ -163,10 +161,21 @@ public sealed class AccountService(IDesktopApi api, IAccountStore store, ISecret
         await ForgetAsync(cancellationToken).ConfigureAwait(false);
     }
 
-    private async Task<IssuedStationTarget> RequestTargetAsync(AccountStation station, CancellationToken cancellationToken)
+    /// <summary>
+    /// Calls the API with the access token. A 401 means the token predates a sign-out on the web (or a server restart):
+    /// refresh and retry once, so a signed-out device is forgotten by the refresh.
+    /// </summary>
+    private async Task<T> WithAccessTokenAsync<T>(Func<string, Task<T>> call, CancellationToken cancellationToken)
     {
-        var token = await GetAccessTokenAsync(cancellationToken).ConfigureAwait(false);
-        return await api.GetBroadcastTargetAsync(token, station.TenantId, station.StationId, cancellationToken).ConfigureAwait(false);
+        try
+        {
+            return await call(await GetAccessTokenAsync(cancellationToken).ConfigureAwait(false)).ConfigureAwait(false);
+        }
+        catch (DesktopApiException ex) when (ex.Error == DesktopApiError.Unauthorized)
+        {
+            _accessToken = null;
+            return await call(await GetAccessTokenAsync(cancellationToken).ConfigureAwait(false)).ConfigureAwait(false);
+        }
     }
 
     /// <summary>A valid access token, refreshed (and the refresh token rotated) when it is about to expire.</summary>

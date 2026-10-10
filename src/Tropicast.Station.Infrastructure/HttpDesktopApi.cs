@@ -41,8 +41,10 @@ public sealed class HttpDesktopApi : IDesktopApi, IDisposable
             .ConfigureAwait(false);
         await EnsureSuccessAsync(response, cancellationToken).ConfigureAwait(false);
         var code = await ReadAsync<DeviceCodeDto>(response, cancellationToken).ConfigureAwait(false);
-        if (string.IsNullOrEmpty(code.DeviceCode) || string.IsNullOrEmpty(code.UserCode) || !IsWebPage(code.VerificationUri)
-            || !IsWebPage(code.VerificationUriComplete) || code.ExpiresIn <= 0 || code.Interval <= 0)
+        // The sign-in page carries the user code: same HTTPS-or-loopback rule as the API itself.
+        if (string.IsNullOrEmpty(code.DeviceCode) || string.IsNullOrEmpty(code.UserCode) || code.VerificationUri is null
+            || !IsAllowed(code.VerificationUri) || code.VerificationUriComplete is null || !IsAllowed(code.VerificationUriComplete)
+            || code.ExpiresIn <= 0 || code.Interval <= 0)
         {
             throw Invalid();
         }
@@ -115,8 +117,6 @@ public sealed class HttpDesktopApi : IDesktopApi, IDisposable
             target.Password);
     }
 
-    private static bool IsWebPage(Uri? url) => url is { IsAbsoluteUri: true } && (url.Scheme == Uri.UriSchemeHttps || url.Scheme == Uri.UriSchemeHttp);
-
     private async Task<HttpResponseMessage> SendAsync(HttpMethod method, string path, string? accessToken, object? body,
         CancellationToken cancellationToken, Guid? tenantId = null)
     {
@@ -144,22 +144,23 @@ public sealed class HttpDesktopApi : IDesktopApi, IDisposable
         }
     }
 
-    private static async Task EnsureSuccessAsync(HttpResponseMessage response, CancellationToken cancellationToken)
+    /// <summary>Fixed messages per status: server text is never shown, so a response cannot echo a token into the UI or logs.</summary>
+    private static Task EnsureSuccessAsync(HttpResponseMessage response, CancellationToken cancellationToken)
     {
+        _ = cancellationToken;
         if (response.IsSuccessStatusCode)
         {
-            return;
+            return Task.CompletedTask;
         }
-        var title = (await TryReadProblemAsync(response, cancellationToken).ConfigureAwait(false))?.Title;
         throw response.StatusCode switch
         {
             HttpStatusCode.Unauthorized => new DesktopApiException(DesktopApiError.Unauthorized, "Sign in again on this device."),
             HttpStatusCode.Forbidden => new DesktopApiException(DesktopApiError.Forbidden,
-                title ?? "This account cannot broadcast to this station."),
+                "Not allowed: this device was signed out on the web, the account is no longer a member, or the station's account is suspended."),
             HttpStatusCode.NotFound => new DesktopApiException(DesktopApiError.NotFound, "This station no longer exists. Refresh the station list."),
             HttpStatusCode.TooManyRequests or >= HttpStatusCode.InternalServerError => new DesktopApiException(DesktopApiError.Unavailable,
                 $"The Tropicast API is temporarily unavailable (HTTP {(int)response.StatusCode}). Try again shortly."),
-            _ => new DesktopApiException(DesktopApiError.Invalid, title ?? $"The Tropicast API refused the request (HTTP {(int)response.StatusCode})."),
+            _ => new DesktopApiException(DesktopApiError.Invalid, $"The Tropicast API refused the request (HTTP {(int)response.StatusCode}). Update the app."),
         };
     }
 
@@ -205,7 +206,7 @@ public sealed class HttpDesktopApi : IDesktopApi, IDisposable
     private sealed record DeviceCodeDto(string DeviceCode, string UserCode, Uri VerificationUri, Uri VerificationUriComplete, long ExpiresIn,
         long Interval);
     private sealed record TokenDto(string AccessToken, long ExpiresIn, string RefreshToken);
-    private sealed record ProblemDto(string? Title, string? Error);
+    private sealed record ProblemDto(string? Error);
     private sealed record StationDto(Guid TenantId, string? TenantName, Guid StationId, string PublicId, string Name, string? Role);
     private sealed record OutputDto(string Format, string ContentType, Uri IngestUrl, Uri ListenerUrl);
     private sealed record TargetDto(Guid StationId, string PublicId, string StationName, string Username, string Password, int MaxBitrateKbps,

@@ -94,6 +94,11 @@ public sealed class AccountTests
         Assert.False(model.Account.CanChooseStation);
         Assert.False(model.Account.SignOutCommand.CanExecute(null));
 
+        // Every account control is locked while live, including sign-in for a signed-out panel.
+        model.Account.IsSignedIn = false;
+        Assert.False(model.Account.SignInCommand.CanExecute(null));
+        model.Account.IsSignedIn = true;
+
         await host.Services.GetRequiredService<BroadcastController>().StopAsync(TestContext.Current.CancellationToken);
         await UntilAsync(() => model.Broadcast.State == BroadcastState.Idle);
         await model.Account.SignOutCommand.ExecuteAsync(null);
