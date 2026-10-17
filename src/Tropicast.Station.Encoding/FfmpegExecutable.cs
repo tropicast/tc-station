@@ -52,9 +52,10 @@ internal sealed class FfmpegExecutable
             "-i", "pipe:0", "-map", "0:a:0",
         ];
         string[] output = options.Codec == EncoderCodec.Opus
-            // Opus runs at 48 kHz; FFmpeg resamples 44.1 kHz capture.
+            // Opus runs at 48 kHz; FFmpeg resamples 44.1 kHz capture. 100 ms Ogg pages instead of the muxer's 1 s:
+            // a page leaves only when full, so its length is delay. Overhead is about 4 % at 64 kbps (20 ms pages: 17 %).
             ? ["-c:a", "libopus", "-b:a", bitrate, "-application", "audio", "-ar", "48000",
-                "-flush_packets", "1", "-f", "ogg", "pipe:1"]
+                "-flush_packets", "1", "-page_duration", "100000", "-f", "ogg", "pipe:1"]
             : ["-c:a", "libmp3lame", "-b:a", bitrate, "-flush_packets", "1", "-write_xing", "0", "-f", "mp3", "pipe:1"];
         return [.. input, .. output];
     }

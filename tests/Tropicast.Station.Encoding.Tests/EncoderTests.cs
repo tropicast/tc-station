@@ -132,6 +132,17 @@ public sealed class EncoderTests
     }
 
     [Fact]
+    public void Opus_leaves_in_100_ms_Ogg_pages_and_both_codecs_flush_each_packet()
+    {
+        var opus = FfmpegExecutable.Arguments(new(new(48000, 2), 64, EncoderCodec.Opus));
+        Assert.Equal(["-page_duration", "100000"], opus.SkipWhile(a => a != "-page_duration").Take(2));
+        foreach (var args in new[] { opus, FfmpegExecutable.Arguments(new()) })
+        {
+            Assert.Equal(["-flush_packets", "1"], args.SkipWhile(a => a != "-flush_packets").Take(2));
+        }
+    }
+
+    [Fact]
     public void Opus_arguments_encode_ogg_at_48_kHz_from_any_capture_rate()
     {
         var args = FfmpegExecutable.Arguments(new(new(44100, 2), 64, EncoderCodec.Opus));
@@ -318,19 +329,15 @@ public sealed class EncoderTests
         await Assert.ThrowsAnyAsync<IOException>(() => session.DisposeAsync().AsTask());
     }
 
-    [Theory]
-    [InlineData(true)]
-    [InlineData(false)]
-    public async Task Format_change_and_two_second_queue_overrun_fail_explicitly(bool formatChange)
+    [Fact]
+    public async Task Format_change_fails_explicitly()
     {
         RequireBundle();
         await using var server = new FakeTropicast();
         using var encoder = CreateEncoder();
         var session = await encoder.StartAsync(server.Target, cancellationToken: TestContext.Current.CancellationToken);
-        var frame = formatChange ? new PcmFrame(new(44100, 1), new byte[4])
-            : new PcmFrame(new(48000, 2), new byte[48000 * 8 * 2 + 8]);
-        var error = Assert.ThrowsAny<IOException>(() => session.Submit(frame));
-        Assert.Contains(formatChange ? "format" : "overrun", error.Message, StringComparison.Ordinal);
+        var error = Assert.ThrowsAny<IOException>(() => session.Submit(new PcmFrame(new(44100, 1), new byte[4])));
+        Assert.Contains("format", error.Message, StringComparison.Ordinal);
         await Assert.ThrowsAnyAsync<IOException>(() => session.Completion.WaitAsync(TimeSpan.FromSeconds(10), TestContext.Current.CancellationToken));
         await Assert.ThrowsAnyAsync<IOException>(() => session.DisposeAsync().AsTask());
     }

@@ -1,34 +1,35 @@
 using System.Diagnostics;
-using System.Threading.Channels;
 using System.Runtime.InteropServices;
+using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Logging.Abstractions;
 using Tropicast.Station.Audio;
 using Tropicast.Station.Infrastructure;
 
 namespace Tropicast.Station.Encoding;
 
-internal sealed class FfmpegSession : IEncoderSession
+internal sealed partial class FfmpegSession : IEncoderSession
 {
     private readonly Process _process;
     private readonly TropicastSourceConnection _connection;
     private readonly EncoderOptions _options;
     private readonly CancellationTokenSource _abort = new();
-    private readonly Channel<PcmFrame> _input = Channel.CreateBounded<PcmFrame>(new BoundedChannelOptions(256)
-    {
-        SingleReader = true, FullMode = BoundedChannelFullMode.Wait, AllowSynchronousContinuations = false,
-    });
+    private readonly PcmQueue _input;
+    private readonly ILogger _logger;
     private readonly object _sync = new();
     private EncoderSnapshot _snapshot = new(EncoderState.Starting, "Encoding is starting.", 0);
-    private long _queuedBytes;
+    private long _lastDropLog = long.MinValue;
     private IOException? _failure;
     private bool _stopping;
     private bool _disposed;
     private bool _tokensDisposed;
 
-    internal FfmpegSession(Process process, TropicastSourceConnection connection, EncoderOptions options)
+    internal FfmpegSession(Process process, TropicastSourceConnection connection, EncoderOptions options, ILogger? logger = null)
     {
         _process = process;
         _connection = connection;
         _options = options;
+        _input = new PcmQueue(options.Format);
+        _logger = logger ?? NullLogger.Instance;
         Completion = Task.Run(RunAsync);
     }
 
@@ -57,20 +58,35 @@ internal sealed class FfmpegSession : IEncoderSession
                     throw _failure!;
                 }
             }
-            if (_queuedBytes + frame.Data.Length > (long)_options.Format.SampleRate * _options.Format.BytesPerFrame * 2
-                || !_input.Writer.TryWrite(new(frame.Format, frame.Data.ToArray())))
+            long dropped;
+            try
             {
-                Fail(new EncoderException("Encoder overrun: the PCM queue is full or more than two seconds behind. Publishing stopped."));
-                throw _failure!;
+                dropped = _input.Enqueue(new(frame.Format, frame.Data.ToArray()));
             }
-            _queuedBytes += frame.Data.Length;
+            catch (EncoderException ex)
+            {
+                Fail(ex);
+                throw;
+            }
+            // At most one line per drop window: a slow machine would otherwise log at the capture rate.
+            if (dropped > 0 && (_lastDropLog == long.MinValue
+                || Stopwatch.GetElapsedTime(_lastDropLog) > PcmQueue.DropWindow))
+            {
+                _lastDropLog = Stopwatch.GetTimestamp();
+                var bytesPerMs = _options.Format.SampleRate * _options.Format.BytesPerFrame / 1000.0;
+                LogDropped(_logger, _options.CodecName, dropped / bytesPerMs, _input.DroppedBytes / bytesPerMs);
+            }
         }
     }
+
+    [LoggerMessage(Level = LogLevel.Warning,
+        Message = "{Codec} encoder fell behind: dropped {DroppedMs:F0} ms of the oldest audio to stay live ({TotalMs:F0} ms this session).")]
+    private static partial void LogDropped(ILogger logger, string codec, double droppedMs, double totalMs);
 
     private void Fail(IOException error)
     {
         _failure ??= error;
-        _input.Writer.TryComplete();
+        _input.Complete();
         if (!_disposed)
         {
             _abort.Cancel();
@@ -81,10 +97,7 @@ internal sealed class FfmpegSession : IEncoderSession
     {
         await foreach (var frame in _input.Reader.ReadAllAsync(_abort.Token).ConfigureAwait(false))
         {
-            lock (_sync)
-            {
-                _queuedBytes -= frame.Data.Length;
-            }
+            _input.Taken(frame);
             await _process.StandardInput.BaseStream.WriteAsync(frame.Data, _abort.Token).ConfigureAwait(false);
         }
         _process.StandardInput.Close();
@@ -258,7 +271,7 @@ internal sealed class FfmpegSession : IEncoderSession
             if (!_stopping)
             {
                 _stopping = true;
-                _input.Writer.TryComplete();
+                _input.Complete();
                 if (!_disposed && _failure is null)
                 {
                     Volatile.Write(ref _snapshot, Snapshot with { State = EncoderState.Stopping, Message = $"Finishing the {_options.CodecName} stream." });

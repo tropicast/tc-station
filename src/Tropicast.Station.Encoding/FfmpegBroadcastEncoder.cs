@@ -53,7 +53,7 @@ public sealed partial class FfmpegBroadcastEncoder : IBroadcastEncoder, IDisposa
             try
             {
                 linked.Token.ThrowIfCancellationRequested();
-                var session = new FfmpegSession(_executable.Start(options), connection, options);
+                var session = new FfmpegSession(_executable.Start(options), connection, options, _logger);
                 _active[mount] = session;
                 return session;
             }
